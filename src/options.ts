@@ -1,4 +1,6 @@
-export interface Options {
+/** Plugin options (exported as `Options` from the package), and resolving their defaults. */
+
+export interface Input {
   /** Module the generated code imports helpers from (default "immutaby/runtime"). */
   runtime?: string;
   /**
@@ -22,7 +24,7 @@ export interface Options {
   inline?: boolean;
 }
 
-export interface ResolvedOptions {
+export interface Resolved {
   runtime: string;
   opaqueCalls: "warn" | "error" | "allow";
   readonlyCalls: readonly string[];
@@ -30,13 +32,13 @@ export interface ResolvedOptions {
   inline: boolean;
 }
 
-export function resolveOptions(options: Options = {}, nodeEnv = process.env.NODE_ENV): ResolvedOptions {
-  const freeze = options.freeze ?? "dev";
+export function resolve(input: Input = {}, nodeEnv = process.env.NODE_ENV): Resolved {
+  const freeze = input.freeze ?? "dev";
   return {
-    runtime: options.runtime ?? "immutaby/runtime",
-    opaqueCalls: options.opaqueCalls ?? "warn",
-    readonlyCalls: options.readonlyCalls ?? [],
+    runtime: input.runtime ?? "immutaby/runtime",
+    opaqueCalls: input.opaqueCalls ?? "warn",
+    readonlyCalls: input.readonlyCalls ?? [],
     freeze: freeze === "always" || (freeze === "dev" && nodeEnv !== "production"),
-    inline: options.inline ?? true,
+    inline: input.inline ?? true,
   };
 }

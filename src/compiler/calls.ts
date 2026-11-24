@@ -26,7 +26,7 @@ const READ_ONLY_METHODS = new Set([
 ]);
 
 /** Global functions that don't change their arguments. */
-const READ_ONLY_GLOBAL_CALLS = new Set([
+const READ_ONLY_GLOBALS = new Set([
   ...["String", "Number", "Boolean", "BigInt", "Symbol", "isNaN", "isFinite", "parseInt", "parseFloat", "structuredClone"],
   ...["JSON.stringify", "Object.keys", "Object.values", "Object.entries", "Object.is", "Object.hasOwn", "Object.getPrototypeOf", "Object.isFrozen"],
   ...["Array.isArray", "Array.from", "Array.of", "Number.isInteger", "Number.isFinite", "Number.isNaN", "Number.isSafeInteger"],
@@ -35,15 +35,15 @@ const READ_ONLY_GLOBAL_CALLS = new Set([
 /** Global namespaces whose functions don't change their arguments. */
 const READ_ONLY_GLOBAL_NAMESPACES = new Set(["console", "Math"]);
 
-export const isMutatingMethod = (name: string): boolean => MUTATING_METHODS.has(name);
-export const isIterationMethod = (name: string): boolean => ITERATION_METHODS.has(name);
-export const isReadOnlyMethod = (name: string): boolean => READ_ONLY_METHODS.has(name);
-export const findIndexMethodFor = (name: string): string | undefined => FIND_INDEX_METHODS.get(name);
+export const isMutating = (method: string): boolean => MUTATING_METHODS.has(method);
+export const isIteration = (method: string): boolean => ITERATION_METHODS.has(method);
+export const isReadOnly = (method: string): boolean => READ_ONLY_METHODS.has(method);
+export const findIndexFor = (method: string): string | undefined => FIND_INDEX_METHODS.get(method);
 
 /** Position of the element parameter in an iteration callback (`reduce` passes the accumulator first). */
-export const elementParamIndex = (method: string): number => (method.startsWith("reduce") ? 1 : 0);
+export const elementIndex = (method: string): number => (method.startsWith("reduce") ? 1 : 0);
 
-/** Whether the global function `dottedName` (e.g. "JSON.stringify") doesn't change its arguments. */
-export function isReadOnlyGlobalCall(dottedName: string): boolean {
-  return READ_ONLY_GLOBAL_CALLS.has(dottedName) || READ_ONLY_GLOBAL_NAMESPACES.has(dottedName.split(".")[0]);
+/** Whether the global function `name` (e.g. "JSON.stringify") doesn't change its arguments. */
+export function isReadOnlyGlobal(name: string): boolean {
+  return READ_ONLY_GLOBALS.has(name) || READ_ONLY_GLOBAL_NAMESPACES.has(name.split(".")[0]);
 }

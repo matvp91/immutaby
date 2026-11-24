@@ -311,24 +311,24 @@ Single package `immutaby`, ESM-only:
 
 ```
 src/
-  index.ts                 plugin + public exports
-  options.ts               Options, and resolving them (e.g. whether to freeze)
-  compiler/
-    transform.ts           entry: parse → find blocks → compile (with alias retries) → apply edits
-    errors.ts              MutError, Warning, the alias-promotion signal
-    ast.ts                 pure AST helpers
-    scope.ts               pure scope bindings
-    known-calls.ts         which methods/calls mutate, iterate or only read
-    codegen.ts             pure code builders (helper calls, inline writes, block wrapper)
-    edits.ts               applying edits with MagicString
-    block/                 analysing one block; state passed explicitly as a BlockContext
-      context.ts, bindings.ts, state-path.ts, writes.ts, aliases.ts, opaque-calls.ts, analyse.ts
-  runtime/                 `immutaby/runtime`
-    index.ts, draftable.ts, context.ts, path.ts, writes.ts, iteration.ts, lending.ts, freeze.ts
-test/                      Vitest; test files contain `mut:` blocks compiled by the plugin
-bench/                     tinybench against hand-written spreads and immer (`pnpm bench`)
-examples/                  a small app built with Rolldown
-docs/specs/
+  index.ts          plugin + public exports
+  options.ts        Options.Input / Options.Resolved / Options.resolve
+  compiler/         each file is a namespace (`import * as State from "./state.ts"`)
+    transform.ts    entry: parse → find blocks → compile (with alias retries) → apply edits
+    ast.ts          AST helpers and scope bindings
+    calls.ts        which methods/calls mutate, iterate or only read
+    codegen.ts      pure builders for generated code
+    errors.ts       MutError, Warning, PromoteToAlias
+    block.ts        analysing one block: its Context, the traversal and dispatch
+    state.ts        resolving names, and which state location an expression denotes
+    writes.ts       writes, mutating calls, and opaque calls (lending deep copies)
+    aliases.ts      locals, for...of and callbacks that point into state
+  runtime/          `immutaby/runtime`
+    index.ts        flat names used by generated code
+    draft.ts        draftables, copies, the block Context, deep copy, freeze
+    path.ts         reading and writing at a path, iteration helpers
+    lending.ts      lending deep copies and restoring sharing
+test/  bench/  examples/  docs/specs/
 ```
 
 Exports: `immutaby` (the plugin factory, `transform`, types, `immerable`) and

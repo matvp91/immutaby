@@ -1,4 +1,4 @@
-import type { AstNode } from "./ast.ts";
+import type * as Ast from "./ast.ts";
 
 export interface Warning {
   message: string;
@@ -22,9 +22,9 @@ export class MutError extends Error {
  * compiled as an alias.
  */
 export class PromoteToAlias {
-  readonly binding: AstNode;
+  readonly binding: Ast.Node;
 
-  constructor(binding: AstNode) {
+  constructor(binding: Ast.Node) {
     this.binding = binding;
   }
 }

@@ -1,5 +1,5 @@
 /** Pure builders for generated code. */
-import type { AstNode } from "./ast.ts";
+import type * as Ast from "./ast.ts";
 
 /** Namespace the runtime is imported as. */
 export const RUNTIME = "__imm";
@@ -7,7 +7,14 @@ export const RUNTIME = "__imm";
 export const CONTEXT = "__imm_c";
 
 /** A piece of generated code: text, or a source node kept in place (so its own edits and sourcemap survive). */
-export type Part = string | AstNode;
+export type Part = string | Ast.Node;
+
+/** Replace the source range [start, end) with `parts`. */
+export interface Edit {
+  start: number;
+  end: number;
+  parts: Part[];
+}
 
 /**
  * One key of a state path: a string literal (`'"name"'`) or other code made by
@@ -30,13 +37,13 @@ export interface Alias {
 export const isPlainKey = (key: PathKey): key is [string] => key.length === 1 && typeof key[0] === "string";
 
 /** `base.name` when `key` is a string literal holding a valid identifier, else `base[key]`. */
-export function memberAccess(base: string, key: string): string {
+export function member(base: string, key: string): string {
   const name = key.startsWith('"') ? JSON.parse(key) : undefined;
   return typeof name === "string" && /^[A-Za-z_$][\w$]*$/.test(name) ? `${base}.${name}` : `${base}[${key}]`;
 }
 
 /** Code reading an alias's location in the current state. */
-export const aliasAccess = (alias: Alias): string => alias.keys.reduce(memberAccess, alias.root);
+export const aliasRead = (alias: Alias): string => alias.keys.reduce(member, alias.root);
 
 export const joinArguments = (nodes: Part[]): Part[] => nodes.flatMap((node, i) => (i ? [", ", node] : [node]));
 export const joinKeys = (keys: PathKey[]): Part[] => keys.flatMap((key, i) => (i ? [", ", ...key] : key));
@@ -45,20 +52,20 @@ export const joinKeys = (keys: PathKey[]): Part[] => keys.flatMap((key, i) => (i
  * A helper call that rebinds the root: `root = helper(..., root)` as a
  * statement, or `(root = helper(..., root), context.slot)` as an expression.
  */
-export function helperWriteCode(root: string, helperCall: Part[], asExpression: boolean, resultSlot: "result" | "previousValue"): Part[] {
+export function helperWrite(root: string, helperCall: Part[], asExpression: boolean, resultSlot: "result" | "previousValue"): Part[] {
   const write = [`${root} = ${RUNTIME}.`, ...helperCall, `, ${root})`];
   return asExpression ? ["(", ...write, `, ${CONTEXT}.${resultSlot})`] : write;
 }
 
 export type InlineWrite =
-  | { kind: "set"; value: AstNode }
-  | { kind: "compound"; operator: string; value: AstNode }
+  | { kind: "set"; value: Ast.Node }
+  | { kind: "compound"; operator: string; value: Ast.Node }
   | { kind: "update"; operator: string }
   | { kind: "delete" };
 
 /** Allocates the variables inline writes need. */
 export interface InlineVariables {
-  /** The variable holding this block's copy of the node at `path` (named by source, e.g. `s["user"]`). */
+  /** The variable holding the block's copy of the node at `path` (named by source, e.g. `s["user"]`). */
   copyOf(path: string): string;
   /** A fresh variable for a computed key. */
   nextKey(): string;
@@ -76,7 +83,7 @@ export interface InlineVariables {
  * check keeps that correct through loops, branches and anything else that
  * rebinds the root.
  */
-export function inlineWriteCode(root: string, keys: PathKey[], write: InlineWrite, sourceOf: (node: AstNode) => string, variables: InlineVariables): Part[] {
+export function inlineWrite(root: string, keys: PathKey[], write: InlineWrite, sourceOf: (node: Ast.Node) => string, variables: InlineVariables): Part[] {
   const code: Part[] = ["{ "];
   // Code reading each node on the path (root first), and the source-based name of its copy variable.
   const nodes = [root];
@@ -89,12 +96,12 @@ export function inlineWriteCode(root: string, keys: PathKey[], write: InlineWrit
       code.push(`const ${lastKey} = `, key, "; ");
     }
     if (i === keys.length - 1) return;
-    nodes.push(memberAccess(nodes[i], lastKey));
+    nodes.push(member(nodes[i], lastKey));
     names.push(`${names[i]}[${typeof key === "string" ? key : sourceOf(key)}]`);
   });
 
   const parent = nodes[nodes.length - 1];
-  const target = memberAccess(parent, lastKey);
+  const target = member(parent, lastKey);
   const value = `${CONTEXT}_v`;
   if (write.kind === "set") code.push(`const ${value} = `, write.value, "; ");
   if (write.kind === "compound") code.push(`const ${value} = ${target} ${write.operator} (`, write.value, "); ");
@@ -121,7 +128,7 @@ export interface BlockWrapperInput {
 }
 
 /** Code opening and closing a compiled block's body. */
-export function blockWrapperCode({ usesContext, copyVariables, lentRoots, frozenRoots }: BlockWrapperInput): { open: string; close: string } {
+export function blockWrapper({ usesContext, copyVariables, lentRoots, frozenRoots }: BlockWrapperInput): { open: string; close: string } {
   const open: string[] = [];
   if (usesContext) open.push(`const ${CONTEXT} = ${RUNTIME}.createContext();`);
   if (copyVariables.length) open.push(`let ${copyVariables.join(", ")};`);
@@ -137,4 +144,4 @@ export function blockWrapperCode({ usesContext, copyVariables, lentRoots, frozen
   return { open: open.join(" "), close: ` } finally { ${atEnd.join(" ")} }` };
 }
 
-export const runtimeImportCode = (specifier: string): string => `import * as ${RUNTIME} from ${JSON.stringify(specifier)};\n`;
+export const runtimeImport = (specifier: string): string => `import * as ${RUNTIME} from ${JSON.stringify(specifier)};\n`;

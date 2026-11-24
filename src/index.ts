@@ -1,18 +1,17 @@
 import type { Plugin } from "rolldown";
 import { MutError } from "./compiler/errors.ts";
-import { transform } from "./compiler/transform.ts";
-import type { Options } from "./options.ts";
+import { MAY_CONTAIN_MUT_BLOCK, transform } from "./compiler/transform.ts";
+import type * as Options from "./options.ts";
 
 export { transform, type TransformResult } from "./compiler/transform.ts";
 export { MutError, type Warning } from "./compiler/errors.ts";
 export { immerable } from "./runtime/index.ts";
-export type { Options } from "./options.ts";
+export type { Input as Options } from "./options.ts";
 
 const SCRIPT_MODULE = /\.[cm]?[jt]sx?(?:$|\?)/;
-const MAY_CONTAIN_MUT_BLOCK = /\bmut\s*:/;
 
 /** Rolldown plugin: compiles `mut: { ... }` blocks into copy-on-write updates. */
-export default function immutaby(options: Options = {}): Plugin {
+export default function immutaby(options: Options.Input = {}): Plugin {
   return {
     name: "immutaby",
     transform: {

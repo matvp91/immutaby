@@ -7,12 +7,10 @@
  */
 import MagicString, { type SourceMap } from "magic-string";
 import { parseAst } from "rolldown/parseAst";
-import { resolveOptions, type Options, type ResolvedOptions } from "../options.ts";
-import { childNodes, type AstNode } from "./ast.ts";
-import { analyseBlock } from "./block/analyse.ts";
-import type { BlockOutput } from "./block/context.ts";
-import { blockWrapperCode, runtimeImportCode } from "./codegen.ts";
-import { applyEdit } from "./edits.ts";
+import * as Options from "../options.ts";
+import * as Ast from "./ast.ts";
+import * as Block from "./block.ts";
+import * as Codegen from "./codegen.ts";
 import { MutError, PromoteToAlias, type Warning } from "./errors.ts";
 
 export interface TransformResult {
@@ -21,54 +19,52 @@ export interface TransformResult {
   warnings: Warning[];
 }
 
-const MAY_CONTAIN_MUT_BLOCK = /\bmut\s*:/;
+/** Cheap check before parsing: could the code contain a `mut:` label? (Also the plugin's hook filter.) */
+export const MAY_CONTAIN_MUT_BLOCK = /\bmut\s*:/;
 
 /** Compiles the `mut:` blocks in `code` (module `id`), or returns null if there is nothing to compile. */
-export function transform(code: string, id: string, options: Options = {}): TransformResult | null {
+export function transform(code: string, id: string, input: Options.Input = {}): TransformResult | null {
   if (!MAY_CONTAIN_MUT_BLOCK.test(code)) return null;
-  const resolved = resolveOptions(options);
+  const options = Options.resolve(input);
   const ast = parseAst(code, { lang: languageOf(id), preserveParens: true }, id);
   const magic = new MagicString(code);
   const warnings: Warning[] = [];
 
   let changed = false;
   for (const { label, enclosing } of mutBlocks(ast)) {
-    const output = compileBlock(code, label, enclosing, resolved);
+    const output = compileBlock(code, label, enclosing, options);
     if (!output) continue;
     for (const edit of output.edits) applyEdit(magic, edit);
-    wrapBlock(magic, label, output, resolved.freeze);
+    wrapBlock(magic, label, output, options.freeze);
     warnings.push(...output.warnings);
     changed = true;
   }
   if (!changed) return null;
 
-  magic.prepend(runtimeImportCode(resolved.runtime));
+  magic.prepend(Codegen.runtimeImport(options.runtime));
   return { code: magic.toString(), map: magic.generateMap({ hires: true, source: id, includeContent: true }), warnings };
 }
 
 /** The outermost `mut:` statements, each with its ancestors (where roots are declared). */
-function* mutBlocks(node: AstNode, ancestors: AstNode[] = []): Generator<{ label: AstNode; enclosing: AstNode[] }> {
+function* mutBlocks(node: Ast.Node, ancestors: Ast.Node[] = []): Generator<{ label: Ast.Node; enclosing: Ast.Node[] }> {
   if (node.type === "LabeledStatement" && node.label.name === "mut") {
     yield { label: node, enclosing: [...ancestors] };
     return;
   }
   ancestors.push(node);
-  for (const child of childNodes(node)) yield* mutBlocks(child, ancestors);
+  for (const child of Ast.children(node)) yield* mutBlocks(child, ancestors);
   ancestors.pop();
 }
 
-/**
- * Analyses a block until no more locals need promoting to aliases. Returns
- * null when the block doesn't write state.
- */
-function compileBlock(code: string, label: AstNode, enclosing: AstNode[], options: ResolvedOptions): BlockOutput | null {
-  const promoted = new WeakSet<AstNode>();
+/** Analyses a block until no more locals need promoting to aliases. Returns null when the block doesn't write state. */
+function compileBlock(code: string, label: Ast.Node, enclosing: Ast.Node[], options: Options.Resolved): Block.Output | null {
+  const promoted = new WeakSet<Ast.Node>();
   for (;;) {
     try {
       const input = { code, options, enclosing, promoted };
-      let output = analyseBlock(label, { ...input, inline: options.inline });
+      let output = Block.analyse(label, { ...input, inline: options.inline });
       // Restoring sharing only knows the helpers' copies, so blocks that lend state use helpers throughout.
-      if (output.lentRoots.size && options.inline) output = analyseBlock(label, { ...input, inline: false });
+      if (output.lentRoots.size && options.inline) output = Block.analyse(label, { ...input, inline: false });
       return output.edits.length ? output : null;
     } catch (error) {
       if (!(error instanceof PromoteToAlias)) throw error;
@@ -79,9 +75,30 @@ function compileBlock(code: string, label: AstNode, enclosing: AstNode[], option
   }
 }
 
+function replaceRange(magic: MagicString, start: number, end: number, text: string): void {
+  if (start < end) magic.overwrite(start, end, text, { contentOnly: true });
+  else if (text) magic.appendLeft(start, text);
+}
+
+/** Applies an edit; node parts keep their source (and its own edits) in place. */
+function applyEdit(magic: MagicString, { start, end, parts }: Codegen.Edit): void {
+  let position = start;
+  let text = "";
+  for (const part of parts) {
+    if (typeof part === "string") {
+      text += part;
+      continue;
+    }
+    replaceRange(magic, position, part.start, text);
+    text = "";
+    position = part.end;
+  }
+  replaceRange(magic, position, end, text);
+}
+
 /** Opens and closes the block's body with its setup and end-of-block code; drops the label unless `break mut` needs it. */
-function wrapBlock(magic: MagicString, label: AstNode, output: BlockOutput, freeze: boolean): void {
-  const { open, close } = blockWrapperCode({
+function wrapBlock(magic: MagicString, label: Ast.Node, output: Block.Output, freeze: boolean): void {
+  const { open, close } = Codegen.blockWrapper({
     usesContext: output.usesContext,
     copyVariables: [...output.copyVariables.values()],
     lentRoots: [...output.lentRoots],
