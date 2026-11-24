@@ -31,3 +31,14 @@ it("drops the label unless the block breaks out of it", () => {
   expect(compile(`let s = {}; mut: { s.a = 1; }`)).not.toMatch(/mut:/);
   expect(compile(`let s = {}; mut: { s.a = 1; break mut; }`)).toMatch(/mut:/);
 });
+
+it("warns at each opaque call", () => {
+  const result = transform(`let s = {}; mut: { rename(s.user); format(s.todos); console.log(s.user); }`, "entry.ts");
+  expect(result?.warnings.map((w) => w.message)).toEqual([
+    expect.stringMatching(/`rename` may change state/),
+    expect.stringMatching(/`format` may change state/),
+  ]);
+  const quiet = transform(`let s = {}; mut: { format(s.todos); }`, "entry.ts", { readonlyCalls: ["format"] });
+  expect(quiet).toBeNull();
+  expect(() => transform(`let s = {}; mut: { rename(s.user); }`, "entry.ts", { opaqueCalls: "error" })).toThrow(/rename/);
+});

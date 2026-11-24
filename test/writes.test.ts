@@ -25,12 +25,13 @@ it("copies the written path and shares the rest", () => {
 
 it("copies each node once across several writes", () => {
   let s = state;
+  let first;
   mut: {
     s.user.name = "Ada";
-    const first = s.user;
+    first = s.user;
     s.user.age = 2;
-    expect(s.user).toBe(first);
   }
+  expect(s.user).toBe(first);
   expect(s.user).toEqual({ name: "Ada", age: 2, address: state.user.address });
 });
 

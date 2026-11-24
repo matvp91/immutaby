@@ -18,7 +18,6 @@ it("writes through a local alias", () => {
     user.name = "Ada";
     const address = user.address;
     address.city = "Brussel";
-    expect(user.name).toBe("Ada");
   }
   expect(s.user).toEqual({ name: "Ada", address: { city: "Brussel" } });
   expect(s.todos).toBe(state.todos);

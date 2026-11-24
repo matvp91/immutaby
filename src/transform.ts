@@ -4,6 +4,19 @@ import { parseAst } from "rolldown/parseAst";
 export interface Options {
   /** Module the generated code imports helpers from. */
   runtime?: string;
+  /**
+   * What to do at calls that may change state the compiler can't see into
+   * (e.g. `rename(s.user)`). They work by deep-copying the argument, so by
+   * default each one is reported.
+   */
+  opaqueCalls?: "warn" | "error" | "allow";
+  /** Functions known not to change their arguments, e.g. `["format", "log.debug"]`. */
+  readonlyCalls?: string[];
+}
+
+export interface Warning {
+  message: string;
+  pos: number;
 }
 
 export class MutError extends Error {
@@ -64,6 +77,22 @@ const FINDERS = new Map([
   ["find", "findIndex"],
   ["findLast", "findLastIndex"],
 ]);
+/** Methods that don't change their receiver (on arrays, strings, numbers, Map/Set, dates, objects). */
+const READ_ONLY_METHODS = new Set([
+  ...["at", "concat", "entries", "every", "filter", "find", "findIndex", "findLast", "findLastIndex", "flat", "flatMap", "forEach", "includes"],
+  ...["indexOf", "join", "keys", "lastIndexOf", "map", "reduce", "reduceRight", "slice", "some", "values", "toReversed", "toSorted", "toSpliced", "with"],
+  ...["charAt", "charCodeAt", "codePointAt", "endsWith", "localeCompare", "match", "matchAll", "normalize", "padEnd", "padStart", "repeat"],
+  ...["replace", "replaceAll", "search", "split", "startsWith", "substring", "toLowerCase", "toUpperCase", "toLocaleLowerCase", "toLocaleUpperCase"],
+  ...["trim", "trimEnd", "trimStart", "toFixed", "toPrecision", "toExponential", "get", "has", "getTime", "toISOString", "toJSON"],
+  ...["hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable", "valueOf", "toString", "toLocaleString"],
+]);
+/** Global functions that don't change their arguments. */
+const READ_ONLY_CALLS = new Set([
+  ...["String", "Number", "Boolean", "BigInt", "Symbol", "isNaN", "isFinite", "parseInt", "parseFloat", "structuredClone"],
+  ...["JSON.stringify", "Object.keys", "Object.values", "Object.entries", "Object.is", "Object.hasOwn", "Object.getPrototypeOf", "Object.isFrozen"],
+  ...["Array.isArray", "Array.from", "Array.of", "Number.isInteger", "Number.isFinite", "Number.isNaN", "Number.isSafeInteger"],
+]);
+const READ_ONLY_NAMESPACES = new Set(["console", "Math"]);
 const REASSIGNABLE = new Set<Kind>(["let", "var", "param", "catch"]);
 const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
 const TS_EXPRESSIONS = new Set(["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "TSTypeAssertion"]);
@@ -101,6 +130,15 @@ function referenceChildren(n: Node): Node[] {
 
 const isTypeOnly = (n: Node) => n.type.startsWith("TS") && !TS_EXPRESSIONS.has(n.type) && n.type !== "TSInstantiationExpression";
 const unwrap = (n: Node): Node => (n.type === "ParenthesizedExpression" || TS_EXPRESSIONS.has(n.type) ? unwrap(n.expression) : n);
+
+/** `a.b.c` for a callee made of plain identifiers, else undefined. */
+function dottedName(n: Node): string | undefined {
+  n = unwrap(n);
+  if (n.type === "Identifier") return n.name;
+  if (n.type !== "MemberExpression" || n.computed) return undefined;
+  const object = dottedName(n.object);
+  return object && `${object}.${n.property.name}`;
+}
 
 /** The statically known method name of a call (`null` when computed), or undefined if it isn't a method call. */
 function methodName(call: Node): string | null | undefined {
@@ -216,11 +254,12 @@ interface Edit {
   parts: Part[];
 }
 
-export function transform(code: string, id: string, options: Options = {}): { code: string; map: SourceMap } | null {
+export function transform(code: string, id: string, options: Options = {}): { code: string; map: SourceMap; warnings: Warning[] } | null {
   if (!/\bmut\s*:/.test(code)) return null;
   const ast = parseAst(code, { lang: langOf(id), preserveParens: true }, id);
   const ms = new MagicString(code);
   let changed = false;
+  const warnings: Warning[] = [];
 
   const replace = (start: number, end: number, text: string) => {
     if (start < end) ms.overwrite(start, end, text, { contentOnly: true });
@@ -241,15 +280,26 @@ export function transform(code: string, id: string, options: Options = {}): { co
     replace(pos, end, text);
   };
 
-  /** Declares the block's context, and drops the label unless `break mut` needs it. */
-  const finishBlock = (label: Node, breaks: boolean) => {
+  /**
+   * Declares the block's context, reconciles roots that lent state to opaque
+   * calls, and drops the label unless `break mut` needs it.
+   */
+  const finishBlock = (label: Node, breaks: boolean, lent: Set<string>) => {
     const body = label.body;
-    const context = `const ${C} = /* @__PURE__ */ ${NS}.createContext();`;
+    let open = `const ${C} = /* @__PURE__ */ ${NS}.createContext();`;
+    let close = "";
+    if (lent.size) {
+      const roots = [...lent];
+      open += ` const ${roots.map((r) => `${C}_${r} = ${r}`).join(", ")}; try {`;
+      close = ` } finally { ${roots.map((r) => `${r} = ${NS}.reconcile(${C}, ${r}, ${C}_${r});`).join(" ")} }`;
+    }
     if (!breaks) ms.remove(label.start, body.start);
-    if (body.type === "BlockStatement") ms.appendLeft(body.start + 1, ` ${context}`);
-    else {
-      ms.prependRight(body.start, `{ ${context} `);
-      ms.appendLeft(body.end, " }");
+    if (body.type === "BlockStatement") {
+      ms.appendLeft(body.start + 1, ` ${open}`);
+      ms.appendLeft(body.end - 1, `${close} `);
+    } else {
+      ms.prependRight(body.start, `{ ${open} `);
+      ms.appendLeft(body.end, `${close} }`);
     }
   };
 
@@ -257,10 +307,11 @@ export function transform(code: string, id: string, options: Options = {}): { co
     const promoted = new WeakSet<Node>();
     for (;;) {
       try {
-        const { edits, breaks } = analyse(label, outer, promoted);
-        if (!edits.length) return;
-        edits.forEach(apply);
-        finishBlock(label, breaks);
+        const result = analyse(code, label, outer, promoted, options);
+        if (!result.edits.length) return;
+        result.edits.forEach(apply);
+        finishBlock(label, result.breaks, result.lent);
+        warnings.push(...result.warnings);
         changed = true;
         return;
       } catch (error) {
@@ -281,12 +332,15 @@ export function transform(code: string, id: string, options: Options = {}): { co
 
   if (!changed) return null;
   ms.prepend(`import * as ${NS} from ${JSON.stringify(options.runtime ?? "immutaby/runtime")};\n`);
-  return { code: ms.toString(), map: ms.generateMap({ hires: true, source: id, includeContent: true }) };
+  return { code: ms.toString(), map: ms.generateMap({ hires: true, source: id, includeContent: true }), warnings };
 }
 
 /** Collects the edits for one `mut:` block. Throws `Promote` when a local has to become an alias. */
-function analyse(label: Node, outer: Node[], promoted: WeakSet<Node>) {
+function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Node>, options: Options) {
   const edits: Edit[] = [];
+  const warnings: Warning[] = [];
+  /** Roots that lent state to opaque calls; reconciled at the end of the block. */
+  const lent = new Set<string>();
   const stack: Scope[] = [];
   /** Nodes replaced by an enclosing edit; they must not get edits of their own. */
   const consumed = new WeakSet<Node>();
@@ -404,6 +458,50 @@ function analyse(label: Node, outer: Node[], promoted: WeakSet<Node>) {
     });
   };
 
+  const isReadOnlyCall = (callee: Node) => {
+    const name = dottedName(callee);
+    if (!name) return false;
+    if (options.readonlyCalls?.includes(name)) return true;
+    const head = name.split(".")[0];
+    return resolve(head).kind === "global" && (READ_ONLY_CALLS.has(name) || READ_ONLY_NAMESPACES.has(head));
+  };
+
+  /**
+   * Passes state at `expr` to a call the compiler can't see into, by lending
+   * it a deep copy (see `lend` in the runtime).
+   */
+  const lendTo = (call: Node, expr: Node, depth: number) => {
+    const target = expr.type === "SpreadElement" ? expr.argument : expr;
+    const callee = code.slice(call.callee.start, call.callee.end);
+    const u = unwrap(target);
+    const ref = u.type === "Identifier" ? resolve(u.name) : null;
+    if (ref?.kind === "tainted") {
+      if (ref.id) throw new Promote(ref.id);
+      warnings.push({ message: `mut: \`${u.name}\` may point into state; changes \`${callee}\` makes through it aren't tracked`, pos: u.start });
+      return;
+    }
+    const path = statePath(target, depth, "", false);
+    if (!path || depth > 0) return;
+    const root = resolve(path.root);
+    if (root.kind === "root" && !REASSIGNABLE.has(root.decl)) return; // not state this block can rebind
+    if (options.opaqueCalls === "error") throw new MutError(`\`${callee}\` may change state the compiler can't see into`, call.start);
+    if (options.opaqueCalls !== "allow")
+      warnings.push({ message: `mut: \`${callee}\` may change state, so it gets a deep copy (reconciled at the end of the block)`, pos: call.start });
+    for (const c of path.consumes) consumed.add(c);
+    lent.add(path.root);
+    emit(target, [`(${path.root} = ${NS}.lend(${C}, [`, ...keyList(path.keys), `], ${path.root}), ${C}.value)`]);
+  };
+
+  /** Lends state to the arguments (and unknown-method receivers) of calls the compiler can't see into. */
+  const handleOpaqueCall = (n: Node, depth: number) => {
+    if (isReadOnlyCall(n.callee)) return;
+    const name = n.type === "CallExpression" ? methodName(n) : undefined;
+    const inlineCallback = name && ITERATION_METHODS.has(name) && FUNCTIONS.has(n.arguments[0]?.type);
+    if (name !== undefined && !(name && READ_ONLY_METHODS.has(name) && (!ITERATION_METHODS.has(name) || inlineCallback)))
+      lendTo(n, unwrap(n.callee).object, depth);
+    for (const a of n.arguments) if (!FUNCTIONS.has(a.type)) lendTo(n, a, depth);
+  };
+
   const handle = (n: Node, parent: Node, depth: number) => {
     switch (n.type) {
       case "Identifier": {
@@ -466,7 +564,7 @@ function analyse(label: Node, outer: Node[], promoted: WeakSet<Node>) {
             const method = callee.computed ? callee.property : JSON.stringify(name);
             if (path) write(n, parent, path, [`callMethod(${C}, [`, ...keyList(path.keys), "], ", method, ", [", ...commaList(n.arguments), "]"]);
           }
-        } else if (name && ITERATION_METHODS.has(name) && FUNCTIONS.has(n.arguments[0]?.type)) {
+        } else if (name && ITERATION_METHODS.has(name) && FUNCTIONS.has(n.arguments[0]?.type) && statePath(callee.object, depth, "", false)) {
           const path = statePath(callee.object, depth, "", false);
           if (path) {
             const element = name.startsWith("reduce") ? 1 : 0;
@@ -477,11 +575,15 @@ function analyse(label: Node, outer: Node[], promoted: WeakSet<Node>) {
               emit(n, [`${NS}.iterate([`, ...keyList(path.keys), `], ${JSON.stringify(name)}, [`, ...commaList(n.arguments), `], ${path.root})`]);
             }
           }
-        }
+        } else handleOpaqueCall(n, depth);
         if (touchesState(n.callee) || n.arguments.some(touchesState))
           for (const a of n.arguments) if (FUNCTIONS.has(a.type) && !callbacks.has(a)) taintParams.add(a);
         break;
       }
+
+      case "NewExpression":
+        handleOpaqueCall(n, depth);
+        break;
 
       case "VariableDeclarator": {
         if (!n.init) break;
@@ -521,7 +623,7 @@ function analyse(label: Node, outer: Node[], promoted: WeakSet<Node>) {
   };
 
   visit(label.body, label, 0);
-  return { edits, breaks };
+  return { edits, breaks, lent, warnings };
 }
 
 const commaList = (nodes: Node[]): Part[] => nodes.flatMap((n, i) => (i ? [", ", n] : [n]));

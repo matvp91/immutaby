@@ -67,7 +67,7 @@ function shallowCopy(value: Node): Node {
 function owned(context: Context, value: Node): Node {
   if (value === null || typeof value !== "object" || context.copies.has(value)) return value;
   const copy = shallowCopy(value);
-  context.copies.add(copy);
+  if (copy !== value) context.copies.add(copy);
   return copy;
 }
 
@@ -194,4 +194,72 @@ export function iterate(path: Path, method: string, args: unknown[], root: Node)
       ? (acc: unknown, _value: unknown, index: number, array: unknown) => callback(acc, at(index), index, array)
       : (_value: unknown, index: number, array: unknown) => callback(at(index), index, array);
   return list[method](wrapped, ...rest);
+}
+
+/** Copies `value` and everything draftable below it, all owned by this block. */
+function deepCopy(context: Context, value: Node, seen = new Map<object, Node>()): Node {
+  if (value === null || typeof value !== "object") return value;
+  const known = seen.get(value);
+  if (known) return known;
+  const copy = owned(context, value);
+  if (!context.copies.has(copy)) return value; // not draftable
+  seen.set(value, copy);
+
+  if (copy instanceof Map) {
+    for (const [key, child] of copy) copy.set(key, deepCopy(context, child, seen));
+  } else if (copy instanceof Set) {
+    const items = [...copy];
+    copy.clear();
+    for (const item of items) copy.add(deepCopy(context, item, seen));
+  } else {
+    for (const key of Object.keys(copy)) copy[key] = deepCopy(context, copy[key], seen);
+  }
+  return copy;
+}
+
+/**
+ * Hands `root.path` to code the compiler can't see into (e.g. `rename(s.user)`):
+ * puts a deep copy into the new tree and returns it in `context.value`, so the
+ * callee may mutate it freely. `reconcile` restores sharing afterwards.
+ */
+export function lend(context: Context, path: Path, root: Node): Node {
+  const value = get(root, path);
+  if (value === null || typeof value !== "object") {
+    context.value = value;
+    return root;
+  }
+  if (path.length === 0) {
+    context.value = deepCopy(context, root);
+    return context.value;
+  }
+
+  root = owned(context, root);
+  const last = path.length - 1;
+  const copy = deepCopy(context, value);
+  ownPath(context, root, path, last)[path[last] as Key] = copy;
+  context.value = copy;
+  return root;
+}
+
+/** Whether `copy` has the same own entries as `base` (compared with `Object.is`). */
+function shallowEqual(copy: Node, base: Node): boolean {
+  if (base === null || typeof base !== "object" || Object.getPrototypeOf(copy) !== Object.getPrototypeOf(base)) return false;
+  if (copy instanceof Map) return copy.size === base.size && [...copy].every(([key, value]) => base.has(key) && Object.is(base.get(key), value));
+  if (copy instanceof Set) return copy.size === base.size && [...copy].every((item) => base.has(item));
+  const keys = Object.keys(copy);
+  return keys.length === Object.keys(base).length && keys.every((key) => Object.hasOwn(base, key) && Object.is(copy[key], base[key]));
+}
+
+/**
+ * Runs at the end of a block that lent state: walks the nodes copied in this
+ * block and swaps each one that ended up equal to its base back for the base.
+ */
+export function reconcile(context: Context, node: Node, base: Node): Node {
+  if (node === base || !context.copies.has(node)) return node;
+  if (node instanceof Map) {
+    for (const [key, child] of node) node.set(key, reconcile(context, child, base instanceof Map ? base.get(key) : undefined));
+  } else if (!(node instanceof Set)) {
+    for (const key of Object.keys(node)) node[key] = reconcile(context, node[key], base?.[key]);
+  }
+  return shallowEqual(node, base) ? base : node;
 }
