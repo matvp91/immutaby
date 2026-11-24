@@ -294,3 +294,9 @@ export { shallowCopy as copy };
 export function same(parent: Node, key: Key, value: unknown): boolean {
   return Object.is(parent[key], value) && (value !== undefined || key in parent);
 }
+
+/** Start of a compiled `for...of` over state: checks it is an array (index loops only work on arrays). */
+export function indexStart(list: unknown): 0 {
+  if (!Array.isArray(list)) throw new TypeError("mut: for...of over state supports arrays only");
+  return 0;
+}

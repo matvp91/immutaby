@@ -176,10 +176,16 @@ Copy-on-write rules:
 - `const u = s.user;` (or `let`) inside a block makes `u` an alias of path
   `s.user`. Writing through `u` copies along `s.user` and rebinds `u` to the copy.
 - Aliases chain (`const a = u.address`).
-- An alias is compiled to the **path** it was read from, with computed keys (and
-  `find` results) captured when it is created. Reads become `get(root, path)`. As a
-  consequence, an alias follows its *position*: after `s.todos.splice(0, 1)`, an
-  alias of `s.todos[1]` points at what is now at index 1.
+- An alias is compiled to the **location** it was read from: reads of `user`
+  become `s.user`, and writes through it are ordinary (inlinable) writes to that
+  location. Static keys cost nothing at runtime. Computed keys and `find` results
+  are captured when the alias is created, in a small array the alias variable
+  holds (`const todo = ["todos", k]` → `s.todos[todo[1]]`). Iteration callbacks
+  read the element by index (`s.todos[i]`, adding the index parameter if
+  needed), and `for...of` over state becomes an index loop. Keys that aren't
+  static fall back to runtime paths (`iterate`, `each`). As a consequence, an
+  alias follows its *position*: after `s.todos.splice(0, 1)`, an alias of
+  `s.todos[1]` points at what is now at index 1.
 - Locals become aliases only when the block writes through them; read-only locals
   and callbacks compile to plain code with no overhead.
 - Conditional and logical aliases (`cond ? s.a : s.b`, `s.a ?? s.b`) are allowed

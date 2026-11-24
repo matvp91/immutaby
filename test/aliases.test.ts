@@ -108,3 +108,66 @@ it("read-only aliases and callbacks stay plain", () => {
   expect(ids).toEqual([3]);
   expect(s).toBe(state);
 });
+
+it("callbacks without parentheses or an index parameter", () => {
+  let s = state;
+  mut: {
+    s.todos.forEach((todo) => (todo.title = "x"));
+    s.todos.forEach(todo => {
+      todo.done = true;
+    });
+  }
+  expect(s.todos.map((t) => [t.title, t.done])).toEqual([
+    ["x", true],
+    ["x", true],
+    ["x", true],
+  ]);
+});
+
+it("falls back to runtime paths when keys aren't static", () => {
+  let s = state;
+  const j = 1;
+  mut: {
+    s.lists[j].items.forEach((item, i, list) => {
+      void list;
+      s.lists[j].items[i] = item * 10;
+    });
+    for (const item of s.lists[j].items) void item;
+    const items = s.lists[j].items;
+    for (const [index] of items.entries()) items[index]++;
+  }
+  expect(s.lists[1].items).toEqual([21]);
+  expect(s.lists[0]).toBe(state.lists[0]);
+});
+
+it("nested aliases inside callbacks and loops", () => {
+  let s = freeze({ groups: [{ todos: [{ done: false }, { done: false }] }, { todos: [{ done: true }] }] });
+  mut: {
+    for (const group of s.groups) {
+      group.todos.forEach((todo) => {
+        todo.done = !todo.done;
+      });
+    }
+  }
+  expect(s.groups.map((g) => g.todos.map((t) => t.done))).toEqual([[true, true], [false]]);
+});
+
+it("for...of over a non-array state value throws", () => {
+  let s = { tags: new Set(["a"]) as unknown as { label: string }[] };
+  expect(() => {
+    mut: {
+      for (const tag of s.tags) tag.label = "x";
+    }
+  }).toThrow(/arrays only/);
+});
+
+it("writes only through a derived alias", () => {
+  let s = state;
+  mut: {
+    const user = s.user;
+    const address = user.address;
+    address.city = "Brussel";
+  }
+  expect(s.user.address.city).toBe("Brussel");
+  expect(state.user.address.city).toBe("Gent");
+});

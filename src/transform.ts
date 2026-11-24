@@ -55,17 +55,27 @@ interface StatePath {
   direct: boolean;
 }
 
+/**
+ * A local that points into state, compiled away: reads become `root` plus
+ * `keys`, and writes go to that location. Keys are code: string literals, or
+ * expressions over variables the compiler controls (an index parameter, or a
+ * holder array with the keys captured when the alias was created).
+ */
+interface Alias {
+  root: string;
+  keys: string[];
+}
+
 interface Scope {
   decls: Map<string, Kind>;
-  /** Locals compiled to runtime paths into state, by root name. */
-  aliases: Map<string, string>;
+  aliases: Map<string, Alias>;
   /** Locals that may point into state, with their binding node if they can become an alias. */
   tainted: Map<string, Node | null>;
 }
 
 type Ref =
   | { kind: "root"; decl: Kind }
-  | { kind: "alias"; root: string }
+  | { kind: "alias"; alias: Alias }
   | { kind: "tainted"; id: Node | null }
   | { kind: "local" }
   | { kind: "global" };
@@ -375,9 +385,11 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
   /** Nodes replaced by an enclosing edit; they must not get edits of their own. */
   const consumed = new WeakSet<Node>();
   /** Inline callbacks of iteration methods on state: they run synchronously, and their element param may alias. */
-  const callbacks = new WeakMap<Node, { path: StatePath; element: number }>();
+  const callbacks = new WeakMap<Node, { path: StatePath; element: number; alias?: Alias }>();
   /** Other functions passed to calls that touch state: their params may point into state. */
   const taintParams = new WeakSet<Node>();
+  /** Iteration callbacks on a not-yet-alias local: writing through the element promotes that local first. */
+  const promoteVia = new WeakMap<Node, { id: Node; element: number }>();
   let breaks = false;
 
   const emit = (n: Node, parts: Part[]) => edits.push({ start: n.start, end: n.end, parts });
@@ -386,7 +398,7 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
     for (let i = stack.length - 1; i >= 0; i--) {
       const scope = stack[i];
       if (!scope.decls.has(name)) continue;
-      if (scope.aliases.has(name)) return { kind: "alias", root: scope.aliases.get(name)! };
+      if (scope.aliases.has(name)) return { kind: "alias", alias: scope.aliases.get(name)! };
       if (scope.tainted.has(name)) return { kind: "tainted", id: scope.tainted.get(name) };
       return { kind: "local" };
     }
@@ -398,10 +410,30 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
   };
   const scopeDeclaring = (name: string) => stack.findLast((s) => s.decls.has(name));
   const taint = (name: string, id: Node | null) => scopeDeclaring(name)?.tainted.set(name, id);
-  const makeAlias = (id: Node, path: StatePath) => {
-    scopeDeclaring(id.name)?.aliases.set(id.name, path.root);
+  const makeAlias = (id: Node, alias: Alias, consumes: Node[] = []) => {
+    scopeDeclaring(id.name)?.aliases.set(id.name, alias);
     consumed.add(id);
-    for (const c of path.consumes) consumed.add(c);
+    for (const c of consumes) consumed.add(c);
+  };
+  /**
+   * The alias for `path`: plain keys are kept; others are read from `holder`,
+   * which must hold the resolved path at runtime (`dynamic`).
+   */
+  const aliasFor = (path: StatePath, holder: string) => {
+    const keys = path.keys.map((k, i) => (isPlain(k) ? k[0] : `${holder}[${i}]`));
+    return { alias: { root: path.root, keys }, dynamic: !path.keys.every(isPlain) };
+  };
+
+  /**
+   * For a member path on a local that could become an alias (`u.address`),
+   * that local's binding: a write through something derived from it must
+   * promote it first.
+   */
+  const pendingAlias = (expr: Node): Node | null => {
+    let n = unwrap(expr);
+    while (n.type === "MemberExpression") n = unwrap(n.object);
+    const ref = n.type === "Identifier" ? resolve(n.name) : null;
+    return ref?.kind === "tainted" ? ref.id : null;
   };
 
   /** Whether `n` (outside nested functions) reads anything that may hold state. */
@@ -448,10 +480,10 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
       const ref = resolve(n.name);
       if (ref.kind === "local") return null;
       if (ref.kind === "alias" || ref.kind === "root") {
-        const root = ref.kind === "alias" ? ref.root : n.name;
+        const root = ref.kind === "alias" ? ref.alias.root : n.name;
         if (strict) checkWritable(root, n, depth, verb);
-        const full = ref.kind === "alias" ? [[`...${n.name}`], ...keys] : keys;
-        return { root, keys: full, consumes: [n], finds: false, direct: ref.kind === "root" };
+        const full = ref.kind === "alias" ? [...ref.alias.keys.map((k) => [k]), ...keys] : keys;
+        return { root, keys: full, consumes: [n], finds: false, direct: true };
       }
       if (!strict) return null;
       if (ref.kind === "tainted") {
@@ -529,14 +561,44 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
     emit(n, [`${open}${path.root} = ${NS}.`, ...call, `, ${path.root})${close}`]);
   };
 
+  /**
+   * The alias for the element parameter of an inline iteration callback that
+   * writes through it. On a plain path the call stays as is and the element
+   * is read by index (`s.todos[i]`, adding the index parameter if needed);
+   * otherwise the call goes through `iterate`, which passes element paths.
+   */
+  const iterationAlias = (call: Node, callback: Node, param: Node, path: StatePath, method: string, element: number): Alias => {
+    const index = callback.params[element + 1];
+    if (path.keys.every(isPlain) && param.type === "Identifier" && (!index || index.type === "Identifier")) {
+      let indexName = index?.name;
+      if (!indexName) {
+        indexName = `${C}_i${++keyTemps}`;
+        const parens = /[(,]$/.test(code.slice(callback.start, param.start).trimEnd());
+        edits.push({ start: param.start, end: param.end, parts: [parens ? "" : "(", param, `, ${indexName}`, parens ? "" : ")"] });
+      }
+      return { root: path.root, keys: [...path.keys.map((k) => k[0]), indexName] };
+    }
+    for (const c of path.consumes) consumed.add(c);
+    emit(call, [`${NS}.iterate([`, ...keyList(path.keys), `], ${JSON.stringify(method)}, [`, ...commaList(call.arguments), `], ${path.root})`]);
+    const { alias } = aliasFor(path, param.name);
+    return { root: alias.root, keys: [...alias.keys, `${param.name}[${path.keys.length}]`] };
+  };
+
   const enterScope = (n: Node, decls: Map<string, Kind>) => {
     stack.push({ decls, aliases: new Map(), tainted: new Map() });
     if (taintParams.has(n)) for (const p of n.params) for (const name of bindingNames(p)) taint(name, null);
+    const via = promoteVia.get(n);
+    if (via) {
+      n.params.forEach((param: Node, i: number) => {
+        if (i === via.element && param.type === "Identifier") taint(param.name, via.id);
+        else if (i !== via.element + 1) for (const name of bindingNames(param)) taint(name, null);
+      });
+    }
     const callback = callbacks.get(n);
     if (!callback) return;
     n.params.forEach((param: Node, i: number) => {
       if (i === callback.element && param.type === "Identifier") {
-        if (promoted.has(param)) makeAlias(param, { ...callback.path, consumes: [] });
+        if (promoted.has(param) && callback.alias) makeAlias(param, callback.alias);
         else taint(param.name, param);
       } else if (i !== callback.element + 1) for (const name of bindingNames(param)) taint(name, null);
     });
@@ -592,14 +654,14 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
     switch (n.type) {
       case "Identifier": {
         const ref = resolve(n.name);
-        if (ref.kind === "alias") emit(n, [`${NS}.get(${ref.root}, ${n.name})`]);
+        if (ref.kind === "alias") emit(n, [access(ref.alias)]);
         break;
       }
       case "Property": {
         const ref = n.shorthand && n.value.type === "Identifier" ? resolve(n.value.name) : null;
         if (ref?.kind === "alias") {
           consumed.add(n.value);
-          emit(n, [`${n.value.name}: ${NS}.get(${ref.root}, ${n.value.name})`]);
+          emit(n, [`${n.value.name}: ${access(ref.alias)}`]);
         }
         break;
       }
@@ -659,15 +721,16 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
           if (path) {
             const element = name.startsWith("reduce") ? 1 : 0;
             const callback = n.arguments[0];
-            callbacks.set(callback, { path, element });
-            if (promoted.has(callback.params[element])) {
-              for (const c of path.consumes) consumed.add(c);
-              emit(n, [`${NS}.iterate([`, ...keyList(path.keys), `], ${JSON.stringify(name)}, [`, ...commaList(n.arguments), `], ${path.root})`]);
-            }
+            const param = callback.params[element];
+            const info: { path: StatePath; element: number; alias?: Alias } = { path, element };
+            callbacks.set(callback, info);
+            if (promoted.has(param)) info.alias = iterationAlias(n, callback, param, path, name, element);
           }
+        } else if (name && ITERATION_METHODS.has(name) && FUNCTIONS.has(n.arguments[0]?.type) && pendingAlias(callee.object)) {
+          promoteVia.set(n.arguments[0], { id: pendingAlias(callee.object), element: name.startsWith("reduce") ? 1 : 0 });
         } else handleOpaqueCall(n, depth);
         if (touchesState(n.callee) || n.arguments.some(touchesState))
-          for (const a of n.arguments) if (FUNCTIONS.has(a.type) && !callbacks.has(a)) taintParams.add(a);
+          for (const a of n.arguments) if (FUNCTIONS.has(a.type) && !callbacks.has(a) && !promoteVia.has(a)) taintParams.add(a);
         break;
       }
 
@@ -679,11 +742,17 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
         if (!n.init) break;
         const path = n.id.type === "Identifier" ? statePath(n.init, depth, "", false) : null;
         if (!path) {
-          if (touchesState(n.init)) for (const name of bindingNames(n.id)) taint(name, null);
+          const via = n.id.type === "Identifier" ? pendingAlias(n.init) : null;
+          if (touchesState(n.init)) for (const name of bindingNames(n.id)) taint(name, via);
         } else if (promoted.has(n.id)) {
-          makeAlias(n.id, path);
-          const keys = ["[", ...keyList(path.keys), "]"];
-          emit(n.init, path.finds ? [`${NS}.resolve(`, ...keys, `, ${path.root})`] : keys);
+          const { alias, dynamic } = aliasFor(path, n.id.name);
+          makeAlias(n.id, alias);
+          if (dynamic) {
+            // Hold the path with its keys captured now (and `find` resolved once).
+            for (const c of path.consumes) consumed.add(c);
+            const keys = ["[", ...keyList(path.keys), "]"];
+            emit(n.init, path.finds ? [`${NS}.resolve(`, ...keys, `, ${path.root})`] : keys);
+          }
         } else taint(n.id.name, n.id);
         break;
       }
@@ -691,10 +760,21 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
         const declarator = n.left.type === "VariableDeclaration" ? n.left.declarations[0] : null;
         const path = declarator?.id.type === "Identifier" ? statePath(n.right, depth, "", false) : null;
         if (!path) {
-          if (touchesState(n.right)) for (const name of bindingNames(declarator ? declarator.id : n.left)) taint(name, null);
+          const via = declarator?.id.type === "Identifier" ? pendingAlias(n.right) : null;
+          if (touchesState(n.right)) for (const name of bindingNames(declarator ? declarator.id : n.left)) taint(name, via);
         } else if (promoted.has(declarator.id)) {
-          makeAlias(declarator.id, path);
-          emit(n.right, [`${NS}.each(() => ${path.root}, [`, ...keyList(path.keys), "])"]);
+          const item = declarator.id.name;
+          if (path.keys.every(isPlain) && !n.await) {
+            // `for (const t of s.todos)` → `for (let t = 0; t < s.todos.length; t++)`, with `t` read as `s.todos[t]`.
+            const keys = path.keys.map((k) => k[0]);
+            const list = access({ root: path.root, keys });
+            makeAlias(declarator.id, { root: path.root, keys: [...keys, item] }, path.consumes);
+            edits.push({ start: n.start, end: n.body.start, parts: [`for (let ${item} = ${NS}.indexStart(${list}); ${item} < ${list}.length; ${item}++) `] });
+          } else {
+            const { alias } = aliasFor(path, item);
+            makeAlias(declarator.id, { root: alias.root, keys: [...alias.keys, `${item}[${path.keys.length}]`] }, path.consumes);
+            emit(n.right, [`${NS}.each(() => ${path.root}, [`, ...keyList(path.keys), "])"]);
+          }
         } else taint(declarator.id.name, declarator.id);
         break;
       }
@@ -717,6 +797,10 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
 }
 
 type InlineOp = { kind: "set"; value: Node } | { kind: "compound"; operator: string; value: Node } | { kind: "update"; operator: string } | { kind: "remove" };
+
+const isPlain = (key: Part[]) => key.length === 1 && typeof key[0] === "string";
+/** Code that reads an alias's location in the current state. */
+const access = (alias: Alias) => alias.keys.reduce(member, alias.root);
 
 /** `base.name` when `key` is a string literal that is a valid identifier, else `base[key]`. */
 function member(base: string, key: string): string {
