@@ -96,6 +96,7 @@ function compileBlock(
     try {
       const input = { code, options, enclosing, promoted };
       let output = Block.analyse(label, { ...input, inline: options.inline });
+
       // Restoring sharing only knows the helpers' copies, so blocks that lend
       // state use helpers throughout.
       if (output.lentRoots.size && options.inline) {

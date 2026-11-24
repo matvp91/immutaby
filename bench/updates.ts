@@ -9,6 +9,7 @@ const small = createState(10);
 const large = createState(1000);
 const target = 500;
 const todo: Todo = { id: -1, title: "new", done: false, tags: [] };
+
 const rename = (user: State["user"]) => {
   user.name = "Grace";
 };
@@ -179,6 +180,7 @@ const suites: Record<
 };
 
 const rows: Record<string, Record<string, string>> = {};
+
 for (const [name, variants] of Object.entries(suites)) {
   const bench = new Bench({ time: 300 });
   for (const [variant, fn] of Object.entries(variants)) {
@@ -204,5 +206,6 @@ for (const [name, variants] of Object.entries(suites)) {
     immer: format("immer"),
   };
 }
+
 console.table(rows);
 console.log("(× = times slower than hand-written spread)", typeof sink);

@@ -8,11 +8,17 @@ import type { Warning } from "./errors.ts";
 import type * as State from "./state.ts";
 import * as Writes from "./writes.ts";
 
-/** A scope inside the block. */
+/**
+ * A scope inside the block.
+ */
 export interface Scope {
   bindings: ReadonlyMap<string, Ast.BindingKind>;
-  /** Locals compiled to state locations. */
+
+  /**
+   * Locals compiled to state locations.
+   */
   aliases: Map<string, Alias>;
+
   /**
    * Locals that may point into state, with their binding node when they can
    * become an alias (else null).
@@ -33,25 +39,47 @@ export interface IterationCallback {
 export interface Output {
   edits: Edit[];
   warnings: Warning[];
-  /** Roots the block writes to (frozen at the end in dev builds). */
+
+  /**
+   * Roots the block writes to (frozen at the end in dev builds).
+   */
   writtenRoots: Set<string>;
-  /** Roots that lent state to opaque calls (sharing is restored at the end). */
+
+  /**
+   * Roots that lent state to opaque calls (sharing is restored at the end).
+   */
   lentRoots: Set<string>;
-  /** Whether any helper uses the block's runtime context. */
+
+  /**
+   * Whether any helper uses the block's runtime context.
+   */
   usesContext: boolean;
-  /** Whether the block contains `break mut`, so the label must stay. */
+
+  /**
+   * Whether the block contains `break mut`, so the label must stay.
+   */
   breaksOut: boolean;
-  /** Copy variables of inline writes, by the source of the node they copy. */
+
+  /**
+   * Copy variables of inline writes, by the source of the node they copy.
+   */
   copyVariables: Map<string, string>;
 }
 
 export interface Input {
   code: string;
   options: Options.Resolved;
-  /** Whether statement-level writes to direct paths are compiled inline. */
+
+  /**
+   * Whether statement-level writes to direct paths are compiled inline.
+   */
   inline: boolean;
-  /** The ancestors of the `mut:` label, where roots are declared. */
+
+  /**
+   * The ancestors of the `mut:` label, where roots are declared.
+   */
   enclosing: readonly Ast.Node[];
+
   /**
    * Bindings that earlier passes found written through: they are compiled as
    * aliases.
@@ -65,12 +93,14 @@ export interface Input {
  */
 export interface Context extends Readonly<Input> {
   readonly scopes: Scope[];
+
   /**
    * Nodes whose source an enclosing edit replaces; they must not get edits of
    * their own.
    */
   readonly replaced: WeakSet<Ast.Node>;
   readonly iterationCallbacks: WeakMap<Ast.Node, IterationCallback>;
+
   /**
    * Iteration callbacks on a local that isn't an alias yet: writing through the
    * element promotes that local first.
@@ -79,6 +109,7 @@ export interface Context extends Readonly<Input> {
     Ast.Node,
     { binding: Ast.Node; elementIndex: number }
   >;
+
   /**
    * Other functions passed to calls that touch state: their parameters may
    * point into state.
@@ -87,9 +118,14 @@ export interface Context extends Readonly<Input> {
   readonly variables: InlineVariables & { nextIndex(): string };
   readonly output: Output;
 
-  /** Replaces `node`'s source with `parts`. */
+  /**
+   * Replaces `node`'s source with `parts`.
+   */
   emit(node: Ast.Node, parts: Part[]): void;
-  /** Replaces the source range [start, end) with `parts`. */
+
+  /**
+   * Replaces the source range [start, end) with `parts`.
+   */
   emitRange(start: number, end: number, parts: Part[]): void;
   markReplaced(nodes: readonly Ast.Node[]): void;
   sourceOf(node: Ast.Node): string;

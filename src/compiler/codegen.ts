@@ -1,7 +1,10 @@
 import type * as Ast from "./ast.ts";
 
-/** Namespace the runtime is imported as. */
+/**
+ * Namespace the runtime is imported as.
+ */
 export const RUNTIME = "__imm";
+
 /**
  * Name of a block's runtime context, and prefix for the block's other generated
  * variables.
@@ -14,7 +17,9 @@ export const CONTEXT = "__imm_c";
  */
 export type Part = string | Ast.Node;
 
-/** Replace the source range [start, end) with `parts`. */
+/**
+ * Replace the source range [start, end) with `parts`.
+ */
 export interface Edit {
   start: number;
   end: number;
@@ -39,7 +44,9 @@ export interface Alias {
   keys: string[];
 }
 
-/** A key that is plain code (no source node), so it can be repeated freely. */
+/**
+ * A key that is plain code (no source node), so it can be repeated freely.
+ */
 export const isPlainKey = (key: PathKey): key is [string] =>
   key.length === 1 && typeof key[0] === "string";
 
@@ -54,14 +61,21 @@ export function member(base: string, key: string): string {
     : `${base}[${key}]`;
 }
 
-/** Code reading an alias's location in the current state. */
+/**
+ * Code reading an alias's location in the current state.
+ */
 export const aliasRead = (alias: Alias): string =>
   alias.keys.reduce(member, alias.root);
 
-/** `parts` separated by commas, as in an argument list. */
+/**
+ * `parts` separated by commas, as in an argument list.
+ */
 export const joinArguments = (nodes: Part[]): Part[] =>
   nodes.flatMap((node, i) => (i ? [", ", node] : [node]));
-/** `keys` separated by commas, as in an array literal of path keys. */
+
+/**
+ * `keys` separated by commas, as in an array literal of path keys.
+ */
 export const joinKeys = (keys: PathKey[]): Part[] =>
   keys.flatMap((key, i) => (i ? [", ", ...key] : key));
 
@@ -87,14 +101,19 @@ export type InlineWrite =
   | { kind: "update"; operator: string }
   | { kind: "delete" };
 
-/** Allocates the variables inline writes need. */
+/**
+ * Allocates the variables inline writes need.
+ */
 export interface InlineVariables {
   /**
    * The variable holding the block's copy of the node at `path` (named by
    * source, e.g. `s["user"]`).
    */
   copyOf(path: string): string;
-  /** A fresh variable for a computed key. */
+
+  /**
+   * A fresh variable for a computed key.
+   */
   nextKey(): string;
 }
 
@@ -123,6 +142,7 @@ export function inlineWrite(
   variables: InlineVariables,
 ): Part[] {
   const code: Part[] = ["{ "];
+
   // Code reading each node on the path (root first), and the source-based name
   // of its copy variable.
   const nodes = [root];
@@ -179,16 +199,22 @@ export function inlineWrite(
 export interface BlockWrapperInput {
   usesContext: boolean;
   copyVariables: string[];
+
   /**
    * Roots that lent state to opaque calls: sharing is restored when the block
    * ends.
    */
   lentRoots: string[];
-  /** Roots deep-frozen when the block ends. */
+
+  /**
+   * Roots deep-frozen when the block ends.
+   */
   frozenRoots: string[];
 }
 
-/** Code opening and closing a compiled block's body. */
+/**
+ * Code opening and closing a compiled block's body.
+ */
 export function blockWrapper({
   usesContext,
   copyVariables,
@@ -227,6 +253,8 @@ export function blockWrapper({
   return { open: open.join(" "), close: ` } finally { ${atEnd.join(" ")} }` };
 }
 
-/** The import of the runtime namespace, prepended to compiled modules. */
+/**
+ * The import of the runtime namespace, prepended to compiled modules.
+ */
 export const runtimeImport = (specifier: string): string =>
   `import * as ${RUNTIME} from ${JSON.stringify(specifier)};\n`;

@@ -1,7 +1,6 @@
 import type * as Path from "./path.ts";
 
-/** State is arbitrary user data; the runtime indexes into it dynamically. */
-// biome-ignore lint/suspicious/noExplicitAny: see the comment above.
+// biome-ignore lint/suspicious/noExplicitAny: state is arbitrary user data.
 export type StateNode = any;
 
 /**
@@ -10,7 +9,9 @@ export type StateNode = any;
  */
 export const immerable: unique symbol = Symbol.for("immer-draftable") as never;
 
-/** Whether `value` is a non-null object. */
+/**
+ * Whether `value` is a non-null object.
+ */
 export function isObject(value: unknown): value is object {
   return value !== null && typeof value === "object";
 }
@@ -61,17 +62,30 @@ export function shallowCopy(value: StateNode): StateNode {
  * block, plus slots the generated code reads results from.
  */
 export interface Context {
-  /** The copies made in this block; the block may write to them directly. */
+  /**
+   * The copies made in this block; the block may write to them directly.
+   */
   copies: Set<object>;
-  /** Result of the last helper, for writes used as expressions. */
+
+  /**
+   * Result of the last helper, for writes used as expressions.
+   */
   result: unknown;
-  /** Value before a postfix `++` / `--`. */
+
+  /**
+   * Value before a postfix `++` / `--`.
+   */
   previousValue: unknown;
-  /** Path of a compound assignment (`+=`), so its keys are evaluated once. */
+
+  /**
+   * Path of a compound assignment (`+=`), so its keys are evaluated once.
+   */
   compoundPath: Path.Keys;
 }
 
-/** A fresh context for a block that uses helpers. */
+/**
+ * A fresh context for a block that uses helpers.
+ */
 export function createContext(): Context {
   return {
     copies: new Set(),
@@ -120,7 +134,9 @@ export function ownAlong(
   return node;
 }
 
-/** The block's copy of `value` and of everything draftable below it. */
+/**
+ * The block's copy of `value` and of everything draftable below it.
+ */
 export function deepCopy(
   context: Context,
   value: StateNode,

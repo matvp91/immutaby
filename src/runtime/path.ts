@@ -25,7 +25,9 @@ export class FindIndexKey {
 export type Key = PropertyKey;
 export type Keys = (Key | FindIndexKey)[];
 
-/** A key that resolves to the index `method` finds with `predicate`. */
+/**
+ * A key that resolves to the index `method` finds with `predicate`.
+ */
 export function findIndexKey(
   method: FindIndexKey["method"],
   predicate: FindIndexKey["predicate"],
@@ -63,7 +65,9 @@ export function resolve(path: Keys, root: StateNode): Keys {
   return path;
 }
 
-/** Whether `parent[key] = value` would change nothing. */
+/**
+ * Whether `parent[key] = value` would change nothing.
+ */
 export function isUnchanged(
   parent: StateNode,
   key: Key,
@@ -74,7 +78,9 @@ export function isUnchanged(
   );
 }
 
-/** `root.path = value`. */
+/**
+ * `root.path = value`.
+ */
 export function write(
   context: Draft.Context,
   path: Keys,
@@ -93,7 +99,9 @@ export function write(
   return newRoot;
 }
 
-/** `root.path++` / `root.path--`, with `delta` of 1 or -1. */
+/**
+ * `root.path++` / `root.path--`, with `delta` of 1 or -1.
+ */
 export function increment(
   context: Draft.Context,
   path: Keys,
@@ -108,7 +116,9 @@ export function increment(
   return write(context, path, next, root);
 }
 
-/** `delete root.path`. */
+/**
+ * `delete root.path`.
+ */
 export function remove(
   context: Draft.Context,
   path: Keys,

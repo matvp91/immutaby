@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { transform } from "../src/index.ts";
 
 const compile = (source: string) => transform(source, "entry.ts")?.code;
+
 const rejects = (source: string, message: RegExp) =>
   expect(() => compile(source)).toThrow(message);
 

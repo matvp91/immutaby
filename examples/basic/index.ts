@@ -3,6 +3,7 @@ interface Todo {
   title: string;
   done: boolean;
 }
+
 interface State {
   user: { name: string };
   todos: Todo[];
@@ -27,6 +28,7 @@ export function toggle(state: State, index: number): State {
 const initial: State = { user: { name: "Ada" }, todos: [] };
 const one = addTodo(initial, "write the plugin");
 const two = toggle(one, 0);
+
 console.log(
   JSON.stringify(two),
   "user shared:",

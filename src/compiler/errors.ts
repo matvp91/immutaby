@@ -2,11 +2,16 @@ import type * as Ast from "./ast.ts";
 
 export interface Warning {
   message: string;
-  /** Offset in the source. */
+
+  /**
+   * Offset in the source.
+   */
   pos: number;
 }
 
-/** A build error at `pos` in the source. */
+/**
+ * A build error at `pos` in the source.
+ */
 export class MutError extends Error {
   readonly pos: number;
 

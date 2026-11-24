@@ -10,6 +10,7 @@ const state = freeze({
   ],
   lists: [{ items: [1] }, { items: [2] }],
 });
+
 type Todo = (typeof state.todos)[number];
 
 it("writes through a local alias", () => {

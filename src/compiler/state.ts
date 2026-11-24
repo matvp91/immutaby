@@ -6,21 +6,35 @@ import { isPlainKey, joinArguments, RUNTIME } from "./codegen.ts";
 import { MutError, PromoteToAlias } from "./errors.ts";
 
 export type Binding =
-  /** Declared outside the block: writes through it are state updates. */
+  /**
+   * Declared outside the block: writes through it are state updates.
+   */
   | { kind: "root"; declaredAs: Ast.BindingKind }
-  /** A local compiled to a state location. */
+
+  /**
+   * A local compiled to a state location.
+   */
   | { kind: "alias"; alias: Alias }
+
   /**
    * A local that may point into state; `promotable` is its binding node if it
    * can become an alias.
    */
   | { kind: "maybeState"; promotable: Ast.Node | null }
-  /** A local that doesn't hold state. */
+
+  /**
+   * A local that doesn't hold state.
+   */
   | { kind: "local" }
-  /** Not declared in this module. */
+
+  /**
+   * Not declared in this module.
+   */
   | { kind: "global" };
 
-/** What `name` refers to at the current point of the block. */
+/**
+ * What `name` refers to at the current point of the block.
+ */
 export function resolve(context: Block.Context, name: string): Binding {
   for (let i = context.scopes.length - 1; i >= 0; i--) {
     const scope = context.scopes[i];
@@ -102,6 +116,7 @@ export function touches(context: Block.Context, node: Ast.Node): boolean {
     const { kind } = resolve(context, node.name);
     return kind !== "local" && kind !== "global";
   }
+
   // Calling a plain function doesn't read state by itself; its arguments might.
   if (
     (node.type === "CallExpression" || node.type === "NewExpression") &&
@@ -114,18 +129,27 @@ export function touches(context: Block.Context, node: Ast.Node): boolean {
   return Ast.references(node).some((child) => touches(context, child));
 }
 
-/** A state location: a root variable plus the keys leading to it. */
+/**
+ * A state location: a root variable plus the keys leading to it.
+ */
 export interface Path {
   root: string;
   keys: PathKey[];
+
   /**
    * Source nodes the path's generated code replaces (they must not get edits of
    * their own).
    */
   replaces: Ast.Node[];
-  /** Whether a key is resolved at runtime (`find`). */
+
+  /**
+   * Whether a key is resolved at runtime (`find`).
+   */
   hasFindKey: boolean;
-  /** Whether it is a root plus member keys, which inline writes can handle. */
+
+  /**
+   * Whether it is a root plus member keys, which inline writes can handle.
+   */
   isDirect: boolean;
 }
 
@@ -135,9 +159,15 @@ export interface PathQuery {
    * the block.
    */
   depth: number;
-  /** Whether the location is about to be written. */
+
+  /**
+   * Whether the location is about to be written.
+   */
   forWrite: boolean;
-  /** What is being done, for error messages ("writes", "deletes", …). */
+
+  /**
+   * What is being done, for error messages ("writes", "deletes", …).
+   */
   verb?: string;
 }
 
@@ -158,7 +188,9 @@ export function aliasFor(
   };
 }
 
-/** Throws unless `root` can be rebound to an updated value from here. */
+/**
+ * Throws unless `root` can be rebound to an updated value from here.
+ */
 export function assertWritableRoot(
   context: Block.Context,
   root: string,

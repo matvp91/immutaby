@@ -1,8 +1,4 @@
-/**
- * An AST node, typed loosely: the AST is large and dynamically shaped, and the
- * compiler only reads the fields it checks.
- */
-// biome-ignore lint/suspicious/noExplicitAny: see the comment above.
+// biome-ignore lint/suspicious/noExplicitAny: the AST is dynamically shaped.
 export type Node = any;
 
 export type BindingKind =
@@ -20,6 +16,7 @@ const FUNCTION_TYPES = new Set([
   "FunctionExpression",
   "ArrowFunctionExpression",
 ]);
+
 // TypeScript wrappers around a runtime expression, e.g. `x as T` or `x!`.
 const TS_EXPRESSION_WRAPPERS = new Set([
   "TSAsExpression",
@@ -27,6 +24,7 @@ const TS_EXPRESSION_WRAPPERS = new Set([
   "TSNonNullExpression",
   "TSTypeAssertion",
 ]);
+
 // Node fields that don't hold code.
 const NON_CODE_FIELDS = new Set([
   ...["type", "start", "end", "range", "loc"],
@@ -57,14 +55,18 @@ export const isTypeOnly = (node: Node): boolean =>
   !TS_EXPRESSION_WRAPPERS.has(node.type) &&
   node.type !== "TSInstantiationExpression";
 
-/** The expression inside parentheses and TypeScript wrappers. */
+/**
+ * The expression inside parentheses and TypeScript wrappers.
+ */
 export const unwrap = (node: Node): Node =>
   node.type === "ParenthesizedExpression" ||
   TS_EXPRESSION_WRAPPERS.has(node.type)
     ? unwrap(node.expression)
     : node;
 
-/** The child nodes that hold code, in source order. */
+/**
+ * The child nodes that hold code, in source order.
+ */
 export function children(node: Node): Node[] {
   const found: Node[] = [];
   for (const field in node) {
@@ -139,7 +141,9 @@ export function methodName(call: Node): string | null | undefined {
     : null;
 }
 
-/** The identifier a member chain starts from (`u` in `u.a.b`), if any. */
+/**
+ * The identifier a member chain starts from (`u` in `u.a.b`), if any.
+ */
 export function chainBase(node: Node): Node | undefined {
   let expression = unwrap(node);
   while (expression.type === "MemberExpression") {
@@ -148,7 +152,9 @@ export function chainBase(node: Node): Node | undefined {
   return expression.type === "Identifier" ? expression : undefined;
 }
 
-/** The names a binding pattern declares (`{ a, b: [c] }` → a, c). */
+/**
+ * The names a binding pattern declares (`{ a, b: [c] }` → a, c).
+ */
 export function bindingNames(pattern: Node): string[] {
   switch (pattern?.type) {
     case "Identifier":
@@ -266,7 +272,9 @@ function declaredBy(node: Node): [string, BindingKind][] | null {
 
 const scopeCache = new WeakMap<Node, ReadonlyMap<string, BindingKind> | null>();
 
-/** The names `node` declares, or null if it doesn't introduce a scope. */
+/**
+ * The names `node` declares, or null if it doesn't introduce a scope.
+ */
 export function scopeBindings(
   node: Node,
 ): ReadonlyMap<string, BindingKind> | null {

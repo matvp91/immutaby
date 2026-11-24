@@ -4,23 +4,27 @@ export interface Input {
    * "immutaby/runtime").
    */
   runtime?: string;
+
   /**
    * What to do at calls that may change state the compiler can't see into
    * (e.g. `rename(s.user)`). They work by deep-copying the argument, so by
    * default each one is reported.
    */
   opaqueCalls?: "warn" | "error" | "allow";
+
   /**
    * Functions known not to change their arguments, e.g. `["format",
    * "log.debug"]`.
    */
   readonlyCalls?: string[];
+
   /**
    * Deep-freeze state written in a block when it ends, so mutation outside
    * `mut:` throws. "dev" (the default) freezes unless `NODE_ENV` is
    * "production" at build time.
    */
   freeze?: "dev" | "always" | "never";
+
   /**
    * Compile statement-level writes to plain paths into inline copies instead
    * of helper calls (default true). Turned off to test the helper path alone.
@@ -28,7 +32,9 @@ export interface Input {
   inline?: boolean;
 }
 
-/** Options with their defaults filled in. */
+/**
+ * Options with their defaults filled in.
+ */
 export interface Resolved {
   runtime: string;
   opaqueCalls: "warn" | "error" | "allow";
@@ -37,7 +43,9 @@ export interface Resolved {
   inline: boolean;
 }
 
-/** Fills in defaults. `nodeEnv` decides whether `freeze: "dev"` freezes. */
+/**
+ * Fills in defaults. `nodeEnv` decides whether `freeze: "dev"` freezes.
+ */
 export function resolve(
   input: Input = {},
   nodeEnv = process.env.NODE_ENV,

@@ -12,9 +12,11 @@ const state = freeze({
 });
 
 type User = typeof state.user;
+
 function rename(user: User, name: string) {
   user.name = name;
 }
+
 function touchNothing(user: User) {
   user.name = user.name;
 }

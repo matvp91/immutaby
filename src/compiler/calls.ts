@@ -49,18 +49,25 @@ const READ_ONLY_GLOBALS = new Set(
 
 const READ_ONLY_GLOBAL_NAMESPACES = new Set(["console", "Math"]);
 
-/** Whether `method` mutates its receiver (array, Map and Set mutators). */
+/**
+ * Whether `method` mutates its receiver (array, Map and Set mutators).
+ */
 export const isMutating = (method: string): boolean =>
   MUTATING_METHODS.has(method);
+
 /**
  * Whether `method` is an array method that calls its callback synchronously for
  * each element.
  */
 export const isIteration = (method: string): boolean =>
   ITERATION_METHODS.has(method);
-/** Whether `method` never changes its receiver. */
+
+/**
+ * Whether `method` never changes its receiver.
+ */
 export const isReadOnly = (method: string): boolean =>
   READ_ONLY_METHODS.has(method);
+
 /**
  * For `find` / `findLast`, the method that gives the index of the same element.
  */

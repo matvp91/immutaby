@@ -6,7 +6,9 @@ import * as Codegen from "./codegen.ts";
 import { isPlainKey, RUNTIME } from "./codegen.ts";
 import * as State from "./state.ts";
 
-/** A read of an alias becomes a read of its location. */
+/**
+ * A read of an alias becomes a read of its location.
+ */
 export function read(context: Block.Context, identifier: Ast.Node): void {
   const binding = State.resolve(context, identifier.name);
   if (binding.kind === "alias") {
@@ -14,7 +16,9 @@ export function read(context: Block.Context, identifier: Ast.Node): void {
   }
 }
 
-/** `{ user }` with `user` an alias becomes `{ user: s.user }`. */
+/**
+ * `{ user }` with `user` an alias becomes `{ user: s.user }`.
+ */
 export function shorthandRead(
   context: Block.Context,
   property: Ast.Node,
@@ -69,6 +73,7 @@ export function declarator(
   if (!needsHolder) {
     return;
   }
+
   // Hold the path, with its computed keys captured now (and `find` resolved
   // once).
   context.markReplaced(path.replaces);

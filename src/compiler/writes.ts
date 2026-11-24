@@ -117,7 +117,9 @@ export function assignment(
   emitHelper(context, node, parent, path, helperCall);
 }
 
-/** Compiles `++` / `--` on state. */
+/**
+ * Compiles `++` / `--` on state.
+ */
 export function update(
   context: Block.Context,
   node: Ast.Node,
@@ -153,7 +155,9 @@ export function update(
   );
 }
 
-/** `delete path.key` (named `remove` since `delete` is reserved). */
+/**
+ * `delete path.key` (named `remove` since `delete` is reserved).
+ */
 export function remove(
   context: Block.Context,
   node: Ast.Node,
@@ -241,6 +245,7 @@ function mayChangeReceiver(call: Ast.Node, method: string | null): boolean {
   if (!method || !Calls.isReadOnly(method)) {
     return true;
   }
+
   // An iteration method with a function reference (not an inline callback) may
   // change the elements.
   return Calls.isIteration(method) && !Ast.isFunction(call.arguments[0]);
