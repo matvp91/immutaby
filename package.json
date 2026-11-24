@@ -6,13 +6,13 @@
   "license": "MIT",
   "exports": {
     ".": "./dist/index.js",
-    "./runtime": "./dist/runtime.js"
+    "./runtime": "./dist/runtime/index.js"
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "example": "pnpm build && rolldown -c examples/basic/rolldown.config.ts && node examples/basic/dist/index.js",

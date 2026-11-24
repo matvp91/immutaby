@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { immerable } from "../src/runtime.ts";
+import { immerable } from "../src/index.ts";
 import { freeze } from "./freeze.ts";
 
 const state = freeze({

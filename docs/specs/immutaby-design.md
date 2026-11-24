@@ -310,22 +310,30 @@ only when used.
 Single package `immutaby`, ESM-only:
 
 ```
-immutaby/
-  src/
-    plugin/        # Rolldown plugin: filter, parse, analyse, emit (ESTree core is parser-agnostic)
-    runtime/       # immutaby/runtime: COW helpers, dispatch, views, reconcile, freeze, patches
-    index.ts       # plugin export (default) + types + compile-time utilities
-  test/
-    fixtures/      # input .ts → expected output snapshots
-    parity/        # differential tests against immer
-  bench/
-  examples/        # a small app built with Rolldown (and one with Vite)
-  docs/
+src/
+  index.ts                 plugin + public exports
+  options.ts               Options, and resolving them (e.g. whether to freeze)
+  compiler/
+    transform.ts           entry: parse → find blocks → compile (with alias retries) → apply edits
+    errors.ts              MutError, Warning, the alias-promotion signal
+    ast.ts                 pure AST helpers
+    scope.ts               pure scope bindings
+    known-calls.ts         which methods/calls mutate, iterate or only read
+    codegen.ts             pure code builders (helper calls, inline writes, block wrapper)
+    edits.ts               applying edits with MagicString
+    block/                 analysing one block; state passed explicitly as a BlockContext
+      context.ts, bindings.ts, state-path.ts, writes.ts, aliases.ts, opaque-calls.ts, analyse.ts
+  runtime/                 `immutaby/runtime`
+    index.ts, draftable.ts, context.ts, path.ts, writes.ts, iteration.ts, lending.ts, freeze.ts
+test/                      Vitest; test files contain `mut:` blocks compiled by the plugin
+bench/                     tinybench against hand-written spreads and immer (`pnpm bench`)
+examples/                  a small app built with Rolldown
+docs/specs/
 ```
 
-Exports: `immutaby` (the plugin factory and types) and `immutaby/runtime` (the helper,
-auto-imported by the plugin). Tooling: TypeScript 7.0.x, Rolldown 1.3.x, Vitest,
-pnpm.
+Exports: `immutaby` (the plugin factory, `transform`, types, `immerable`) and
+`immutaby/runtime` (the helpers, auto-imported by the plugin). Tooling:
+TypeScript 7.0.x, Rolldown 1.3.x, Vitest, pnpm.
 
 ## 8. Testing and success criteria
 

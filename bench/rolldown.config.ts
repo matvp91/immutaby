@@ -8,5 +8,5 @@ export default defineConfig({
   platform: "node",
   external: ["immer", "tinybench"],
   output: { dir: "bench/dist" },
-  plugins: [immutaby({ runtime: fileURLToPath(new URL("../src/runtime.ts", import.meta.url)), freeze: "never", opaqueCalls: "allow" })],
+  plugins: [immutaby({ runtime: fileURLToPath(new URL("../src/runtime/index.ts", import.meta.url)), freeze: "never", opaqueCalls: "allow" })],
 });
