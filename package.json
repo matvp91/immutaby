@@ -1,0 +1,33 @@
+{
+  "name": "immutaby",
+  "version": "0.0.0",
+  "description": "Compile-time immutable updates for Rolldown: write mutations in a `mut:` block, get structural sharing without proxies.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./dist/index.js",
+    "./runtime": "./dist/runtime.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "example": "pnpm build && rolldown -c examples/basic/rolldown.config.ts && node examples/basic/dist/index.js"
+  },
+  "peerDependencies": {
+    "rolldown": "^1.3.0"
+  },
+  "dependencies": {
+    "magic-string": "^1.4.5"
+  },
+  "devDependencies": {
+    "@oxc-project/types": "^0.160.0",
+    "@types/node": "^26.6.6",
+    "rolldown": "^1.3.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}
