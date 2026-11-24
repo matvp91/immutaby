@@ -265,8 +265,11 @@ elsewhere):
 Plugin option `freeze: "dev" | "always" | "never"`, default `"dev"`. When
 freezing is on, new nodes produced by a block are deep-frozen at block end, so
 mutation outside `mut:` throws (strict mode), as with immer's auto-freeze.
-"dev" means the build isn't in production mode. The builder decides how that
-is detected under Rolldown and Vite.
+"dev" means `NODE_ENV !== "production"` at build time (Vite and Vitest set it;
+plain Rolldown production builds should too). Freezing walks from each written
+root and stops at already-frozen nodes, so after the first block only new nodes
+are visited. Frozen Map/Set get throwing `set`/`add`/`delete`/`clear`.
+Non-draftable class instances are not frozen.
 
 ### 5.10 Patches (opt-in, last milestone)
 

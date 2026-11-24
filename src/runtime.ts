@@ -48,9 +48,11 @@ export function finder(method: Finder["method"], predicate: Finder["predicate"])
   return new Finder(method, predicate);
 }
 
+/** Plain objects, arrays, Map, Set, null-prototype objects and classes marked `immerable`. */
 function isDraftable(value: object): boolean {
+  if (Array.isArray(value) || value instanceof Map || value instanceof Set) return true;
   const proto = Object.getPrototypeOf(value);
-  return proto === null || immerable in value || Boolean(proto.constructor?.[immerable]);
+  return proto === Object.prototype || proto === null || immerable in value || Boolean(proto.constructor?.[immerable]);
 }
 
 function shallowCopy(value: Node): Node {
@@ -60,6 +62,27 @@ function shallowCopy(value: Node): Node {
   if (Object.getPrototypeOf(value) === Object.prototype) return { ...value };
   if (isDraftable(value)) return Object.assign(Object.create(Object.getPrototypeOf(value)), value);
   // Not draftable: shared, and writes go straight through (as in immer).
+  return value;
+}
+
+function throwFrozen(): never {
+  throw new TypeError("mut: this collection is frozen; change it inside a `mut:` block");
+}
+
+/**
+ * Deep-freezes draftable nodes, stopping at nodes that are already frozen (so
+ * after the first block only new nodes are visited). Map and Set get throwing
+ * mutators, since `Object.freeze` doesn't stop `set`/`add`.
+ */
+export function freeze<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value) || !isDraftable(value)) return value;
+  let children: Iterable<unknown> = Object.values(value);
+  if (value instanceof Map || value instanceof Set) {
+    for (const method of ["set", "add", "delete", "clear"]) if (method in value) Object.defineProperty(value, method, { value: throwFrozen });
+    children = value.values();
+  }
+  Object.freeze(value);
+  for (const child of children) freeze(child);
   return value;
 }
 

@@ -12,6 +12,12 @@ export interface Options {
   opaqueCalls?: "warn" | "error" | "allow";
   /** Functions known not to change their arguments, e.g. `["format", "log.debug"]`. */
   readonlyCalls?: string[];
+  /**
+   * Deep-freeze state written in a block when it ends, so mutation outside
+   * `mut:` throws. "dev" (the default) freezes unless `NODE_ENV` is
+   * "production" at build time.
+   */
+  freeze?: "dev" | "always" | "never";
 }
 
 export interface Warning {
@@ -280,18 +286,25 @@ export function transform(code: string, id: string, options: Options = {}): { co
     replace(pos, end, text);
   };
 
+  const freezing = options.freeze === "always" || (options.freeze !== "never" && process.env.NODE_ENV !== "production");
+
   /**
-   * Declares the block's context, reconciles roots that lent state to opaque
-   * calls, and drops the label unless `break mut` needs it.
+   * Declares the block's context; when the block ends, reconciles roots that
+   * lent state to opaque calls and freezes written roots. Drops the label
+   * unless `break mut` needs it.
    */
-  const finishBlock = (label: Node, breaks: boolean, lent: Set<string>) => {
+  const finishBlock = (label: Node, breaks: boolean, written: Set<string>, lent: Set<string>) => {
     const body = label.body;
     let open = `const ${C} = /* @__PURE__ */ ${NS}.createContext();`;
     let close = "";
-    if (lent.size) {
-      const roots = [...lent];
-      open += ` const ${roots.map((r) => `${C}_${r} = ${r}`).join(", ")}; try {`;
-      close = ` } finally { ${roots.map((r) => `${r} = ${NS}.reconcile(${C}, ${r}, ${C}_${r});`).join(" ")} }`;
+    const frozen = freezing ? [...written] : [];
+    if (lent.size || frozen.length) {
+      const bases = [...lent].map((r) => `${C}_${r} = ${r}`);
+      if (bases.length) open += ` const ${bases.join(", ")};`;
+      const reconcile = [...lent].map((r) => `${r} = ${NS}.reconcile(${C}, ${r}, ${C}_${r});`);
+      const freeze = frozen.map((r) => `${NS}.freeze(${r});`);
+      open += " try {";
+      close = ` } finally { ${[...reconcile, ...freeze].join(" ")} }`;
     }
     if (!breaks) ms.remove(label.start, body.start);
     if (body.type === "BlockStatement") {
@@ -310,7 +323,7 @@ export function transform(code: string, id: string, options: Options = {}): { co
         const result = analyse(code, label, outer, promoted, options);
         if (!result.edits.length) return;
         result.edits.forEach(apply);
-        finishBlock(label, result.breaks, result.lent);
+        finishBlock(label, result.breaks, result.written, result.lent);
         warnings.push(...result.warnings);
         changed = true;
         return;
@@ -339,7 +352,8 @@ export function transform(code: string, id: string, options: Options = {}): { co
 function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Node>, options: Options) {
   const edits: Edit[] = [];
   const warnings: Warning[] = [];
-  /** Roots that lent state to opaque calls; reconciled at the end of the block. */
+  /** Roots written in this block, and those that lent state to opaque calls. */
+  const written = new Set<string>();
   const lent = new Set<string>();
   const stack: Scope[] = [];
   /** Nodes replaced by an enclosing edit; they must not get edits of their own. */
@@ -439,6 +453,7 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
   /** Emits a helper call that rebinds the root: `root = helper(...)`, or `(root = helper(...), C.slot)` in expressions. */
   const write = (n: Node, parent: Node, path: StatePath, call: Part[], slot = "value") => {
     for (const c of path.consumes) consumed.add(c);
+    written.add(path.root);
     const statement = parent.type === "ExpressionStatement";
     const open = statement ? "" : "(";
     const close = statement ? "" : `, ${C}.${slot})`;
@@ -489,6 +504,7 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
       warnings.push({ message: `mut: \`${callee}\` may change state, so it gets a deep copy (reconciled at the end of the block)`, pos: call.start });
     for (const c of path.consumes) consumed.add(c);
     lent.add(path.root);
+    written.add(path.root);
     emit(target, [`(${path.root} = ${NS}.lend(${C}, [`, ...keyList(path.keys), `], ${path.root}), ${C}.value)`]);
   };
 
@@ -623,7 +639,7 @@ function analyse(code: string, label: Node, outer: Node[], promoted: WeakSet<Nod
   };
 
   visit(label.body, label, 0);
-  return { edits, breaks, lent, warnings };
+  return { edits, breaks, written, lent, warnings };
 }
 
 const commaList = (nodes: Node[]): Part[] => nodes.flatMap((n, i) => (i ? [", ", n] : [n]));
