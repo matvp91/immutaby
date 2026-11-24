@@ -1,11 +1,3 @@
-/**
- * Compiles the `mut: { ... }` blocks of a module into copy-on-write updates.
- *
- * Each block is analysed (possibly several times, as locals written through
- * are promoted to aliases), and the resulting edits are applied with
- * MagicString so untouched code and sourcemaps stay intact.
- */
-
 import type { SourceMap } from "magic-string";
 import MagicString from "magic-string";
 import { parseAst } from "rolldown/parseAst";
@@ -60,7 +52,7 @@ export function transform(code: string, id: string, input: Options.Input = {}): 
   };
 }
 
-/** The outermost `mut:` statements, each with its ancestors (where roots are declared). */
+// Only the outermost `mut:` statements: nested ones are compiled as part of their outer block.
 function* mutBlocks(node: Ast.Node, ancestors: Ast.Node[] = []): Generator<{ label: Ast.Node; enclosing: Ast.Node[] }> {
   if (node.type === "LabeledStatement" && node.label.name === "mut") {
     yield { label: node, enclosing: [...ancestors] };
@@ -73,7 +65,8 @@ function* mutBlocks(node: Ast.Node, ancestors: Ast.Node[] = []): Generator<{ lab
   ancestors.pop();
 }
 
-/** Analyses a block until no more locals need promoting to aliases. Returns null when the block doesn't write state. */
+// Each pass may find a local that is written through; it is then promoted to an alias and the
+// block is analysed again, until a pass completes.
 function compileBlock(
   code: string,
   label: Ast.Node,
@@ -111,7 +104,7 @@ function replaceRange(magic: MagicString, start: number, end: number, text: stri
   }
 }
 
-/** Applies an edit; node parts keep their source (and its own edits) in place. */
+// Node parts are kept in place rather than copied, so their own edits and sourcemap survive.
 function applyEdit(magic: MagicString, { start, end, parts }: Codegen.Edit): void {
   let position = start;
   let text = "";
@@ -127,7 +120,7 @@ function applyEdit(magic: MagicString, { start, end, parts }: Codegen.Edit): voi
   replaceRange(magic, position, end, text);
 }
 
-/** Opens and closes the block's body with its setup and end-of-block code; drops the label unless `break mut` needs it. */
+// The label is only kept when `break mut` needs it.
 function wrapBlock(magic: MagicString, label: Ast.Node, output: Block.Output, freeze: boolean): void {
   const { open, close } = Codegen.blockWrapper({
     usesContext: output.usesContext,

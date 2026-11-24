@@ -1,9 +1,3 @@
-/**
- * Locals that point into state: declarations (`const user = s.user`),
- * `for...of` loops over state, and the element parameter of iteration
- * callbacks. They stay plain locals unless the block writes through them;
- * then (on the next pass) they are compiled as aliases of their location.
- */
 import * as Ast from "./ast.ts";
 import type * as Block from "./block.ts";
 import * as Calls from "./calls.ts";
@@ -105,12 +99,9 @@ export function forOf(context: Block.Context, loop: Ast.Node, depth: number): vo
   context.emit(loop.right, [`${RUNTIME}.Path.elements(() => ${path.root}, [`, ...Codegen.joinKeys(path.keys), "])"]);
 }
 
-/**
- * The alias for the element of an iteration callback that writes through it.
- * On a plain path the call stays as is and the element is read by index
- * (`s.todos[i]`, adding the index parameter if needed); otherwise the call
- * goes through `iterateWithPaths`, which passes element paths.
- */
+// On a plain path the call stays as is and the element is read by index (`s.todos[i]`, adding
+// the index parameter if needed); otherwise the call goes through `Path.iterate`, which passes
+// element paths.
 function elementAlias(
   context: Block.Context,
   call: Ast.Node,
@@ -195,7 +186,7 @@ export function markCallbackParams(context: Block.Context, call: Ast.Node): void
   }
 }
 
-/** For each parameter: `onElement` for the element, nothing for the index, "may be state" for the rest. */
+// The element goes to `onElement`, the index is left alone, and any other parameter may be state.
 function bindIterationParams(
   context: Block.Context,
   callback: Ast.Node,

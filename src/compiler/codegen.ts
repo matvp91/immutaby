@@ -1,4 +1,3 @@
-/** Pure builders for generated code. */
 import type * as Ast from "./ast.ts";
 
 /** Namespace the runtime is imported as. */
@@ -45,12 +44,16 @@ export function member(base: string, key: string): string {
 /** Code reading an alias's location in the current state. */
 export const aliasRead = (alias: Alias): string => alias.keys.reduce(member, alias.root);
 
+/** `parts` separated by commas, as in an argument list. */
 export const joinArguments = (nodes: Part[]): Part[] => nodes.flatMap((node, i) => (i ? [", ", node] : [node]));
+/** `keys` separated by commas, as in an array literal of path keys. */
 export const joinKeys = (keys: PathKey[]): Part[] => keys.flatMap((key, i) => (i ? [", ", ...key] : key));
 
 /**
  * A helper call that rebinds the root: `root = helper(..., root)` as a
  * statement, or `(root = helper(..., root), context.slot)` as an expression.
+ * The root is passed last so it is read after the right-hand side has run,
+ * which keeps writes nested in the right-hand side.
  */
 export function helperWrite(
   root: string,
@@ -79,9 +82,9 @@ export interface InlineVariables {
 /**
  * A statement-level write to `root` plus `keys`, compiled to inline copies:
  *
- *   s.user.name = v  →  { const v' = v; if (!isUnchanged(s.user, "name", v')) {
- *                         if (s !== c0) s = c0 = shallowCopy(s);
- *                         if (s.user !== c1) s.user = c1 = shallowCopy(s.user);
+ *   s.user.name = v  →  { const v' = v; if (!Path.isUnchanged(s.user, "name", v')) {
+ *                         if (s !== c0) s = c0 = Draft.shallowCopy(s);
+ *                         if (s.user !== c1) s.user = c1 = Draft.shallowCopy(s.user);
  *                         s.user.name = v'; } }
  *
  * `c0`/`c1` hold the block's copies, so each node is copied once; the identity
@@ -180,5 +183,6 @@ export function blockWrapper({ usesContext, copyVariables, lentRoots, frozenRoot
   return { open: open.join(" "), close: ` } finally { ${atEnd.join(" ")} }` };
 }
 
+/** The import of the runtime namespace, prepended to compiled modules. */
 export const runtimeImport = (specifier: string): string =>
   `import * as ${RUNTIME} from ${JSON.stringify(specifier)};\n`;

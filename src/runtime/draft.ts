@@ -1,7 +1,3 @@
-/**
- * Drafts: which values can be copied, and the copies a `mut:` block makes.
- * A block owns the copies it made, so it can write to them directly.
- */
 import type * as Path from "./path.ts";
 
 /** State is arbitrary user data; the runtime indexes into it dynamically. */
@@ -11,6 +7,7 @@ export type StateNode = any;
 /** Classes marked with this symbol are copied like plain objects (the same symbol as immer's `immerable`). */
 export const immerable: unique symbol = Symbol.for("immer-draftable") as never;
 
+/** Whether `value` is a non-null object. */
 export function isObject(value: unknown): value is object {
   return value !== null && typeof value === "object";
 }
@@ -52,6 +49,7 @@ export function shallowCopy(value: StateNode): StateNode {
  * block, plus slots the generated code reads results from.
  */
 export interface Context {
+  /** The copies made in this block; the block may write to them directly. */
   copies: Set<object>;
   /** Result of the last helper, for writes used as expressions. */
   result: unknown;
@@ -61,6 +59,7 @@ export interface Context {
   compoundPath: Path.Keys;
 }
 
+/** A fresh context for a block that uses helpers. */
 export function createContext(): Context {
   return { copies: new Set(), result: undefined, previousValue: undefined, compoundPath: [] };
 }

@@ -1,11 +1,3 @@
-/**
- * Reading and writing state at a path, for code the compiler doesn't inline.
- *
- * Helpers that write take the root last and return the (possibly new) root:
- * taking it last means it is read after the right-hand side has run, so
- * writes nested in the right-hand side are kept.
- */
-
 import type { StateNode } from "./draft.ts";
 import * as Draft from "./draft.ts";
 
@@ -26,6 +18,7 @@ export class FindIndexKey {
 export type Key = PropertyKey;
 export type Keys = (Key | FindIndexKey)[];
 
+/** A key that resolves to the index `method` finds with `predicate`. */
 export function findIndexKey(method: FindIndexKey["method"], predicate: FindIndexKey["predicate"]): FindIndexKey {
   return new FindIndexKey(method, predicate);
 }
@@ -108,7 +101,7 @@ const MUTATING_ARRAY_METHODS = new Set<Key>([
   "copyWithin",
 ]);
 
-/** Whether calling `method` with `args` on `target` would change it (calls that change nothing don't copy). */
+// Calls that change nothing, like adding an item a Set already has, shouldn't copy.
 function wouldMutate(target: StateNode, method: Key, args: unknown[]): boolean {
   if (Array.isArray(target)) {
     return MUTATING_ARRAY_METHODS.has(method);

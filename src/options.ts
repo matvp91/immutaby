@@ -1,5 +1,3 @@
-/** Plugin options (exported as `Options` from the package), and resolving their defaults. */
-
 export interface Input {
   /** Module the generated code imports helpers from (default "immutaby/runtime"). */
   runtime?: string;
@@ -24,6 +22,7 @@ export interface Input {
   inline?: boolean;
 }
 
+/** Options with their defaults filled in. */
 export interface Resolved {
   runtime: string;
   opaqueCalls: "warn" | "error" | "allow";
@@ -32,6 +31,7 @@ export interface Resolved {
   inline: boolean;
 }
 
+/** Fills in defaults. `nodeEnv` decides whether `freeze: "dev"` freezes. */
 export function resolve(input: Input = {}, nodeEnv = process.env.NODE_ENV): Resolved {
   const freeze = input.freeze ?? "dev";
   return {

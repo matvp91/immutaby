@@ -1,8 +1,6 @@
-/** What the compiler knows about built-in methods and functions. */
-
 const words = (list: string): string[] => list.trim().split(/\s+/);
 
-/** Methods that mutate their receiver: array mutators, and Map/Set mutators. */
+// Array, Map and Set mutators.
 const MUTATING_METHODS = new Set(
   words(`
     push pop shift unshift splice sort reverse fill copyWithin
@@ -10,20 +8,20 @@ const MUTATING_METHODS = new Set(
   `),
 );
 
-/** Array methods that call a callback with each element, synchronously. */
+// Array methods that call their callback synchronously, once per element.
 const ITERATION_METHODS = new Set(
   words(`
     forEach map filter find findLast findIndex findLastIndex some every flatMap reduce reduceRight
   `),
 );
 
-/** `find`-like methods, and the method that gives the index of the same element. */
+// A `find`-like method → the method giving the index of the same element.
 const FIND_INDEX_METHODS = new Map([
   ["find", "findIndex"],
   ["findLast", "findLastIndex"],
 ]);
 
-/** Methods that don't change their receiver (on arrays, strings, numbers, Map/Set, dates and objects). */
+// On arrays, strings, numbers, Map/Set, dates and plain objects.
 const READ_ONLY_METHODS = new Set(
   words(`
     at concat entries every filter find findIndex findLast findLastIndex flat flatMap forEach includes
@@ -36,7 +34,6 @@ const READ_ONLY_METHODS = new Set(
   `),
 );
 
-/** Global functions that don't change their arguments. */
 const READ_ONLY_GLOBALS = new Set(
   words(`
     String Number Boolean BigInt Symbol isNaN isFinite parseInt parseFloat structuredClone
@@ -45,12 +42,15 @@ const READ_ONLY_GLOBALS = new Set(
   `),
 );
 
-/** Global namespaces whose functions don't change their arguments. */
 const READ_ONLY_GLOBAL_NAMESPACES = new Set(["console", "Math"]);
 
+/** Whether `method` mutates its receiver (array, Map and Set mutators). */
 export const isMutating = (method: string): boolean => MUTATING_METHODS.has(method);
+/** Whether `method` is an array method that calls its callback synchronously for each element. */
 export const isIteration = (method: string): boolean => ITERATION_METHODS.has(method);
+/** Whether `method` never changes its receiver. */
 export const isReadOnly = (method: string): boolean => READ_ONLY_METHODS.has(method);
+/** For `find` / `findLast`, the method that gives the index of the same element. */
 export const findIndexFor = (method: string): string | undefined => FIND_INDEX_METHODS.get(method);
 
 /** Position of the element parameter in an iteration callback (`reduce` passes the accumulator first). */

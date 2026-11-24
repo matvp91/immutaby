@@ -1,7 +1,3 @@
-/**
- * What holds state inside a block: resolving names (roots, aliases, locals
- * that may point into state), and which state location an expression denotes.
- */
 import * as Ast from "./ast.ts";
 import type * as Block from "./block.ts";
 import * as Calls from "./calls.ts";
@@ -21,6 +17,7 @@ export type Binding =
   /** Not declared in this module. */
   | { kind: "global" };
 
+/** What `name` refers to at the current point of the block. */
 export function resolve(context: Block.Context, name: string): Binding {
   for (let i = context.scopes.length - 1; i >= 0; i--) {
     const scope = context.scopes[i];
@@ -48,6 +45,7 @@ export function resolve(context: Block.Context, name: string): Binding {
 const scopeDeclaring = (context: Block.Context, name: string): Block.Scope | undefined =>
   context.scopes.findLast((scope) => scope.bindings.has(name));
 
+/** Records that the local `name` may point into state; `promotable` is its binding node if it can become an alias. */
 export function markMaybeState(context: Block.Context, name: string, promotable: Ast.Node | null): void {
   scopeDeclaring(context, name)?.maybeState.set(name, promotable);
 }
@@ -88,8 +86,6 @@ export function touches(context: Block.Context, node: Ast.Node): boolean {
   }
   return Ast.references(node).some((child) => touches(context, child));
 }
-
-// ---------------------------------------------------------------------------- paths
 
 /** A state location: a root variable plus the keys leading to it. */
 export interface Path {

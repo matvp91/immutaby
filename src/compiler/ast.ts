@@ -1,5 +1,3 @@
-/** Pure helpers over the ESTree (and TS-ESTree) AST produced by Rolldown's parser, including scopes. */
-
 /**
  * An AST node, typed loosely: the AST is large and dynamically shaped, and the
  * compiler only reads the fields it checks.
@@ -10,14 +8,14 @@ export type Node = any;
 export type BindingKind = "var" | "let" | "const" | "param" | "catch" | "function" | "class" | "import";
 
 const FUNCTION_TYPES = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
-/** TypeScript wrappers around a runtime expression, e.g. `x as T` or `x!`. */
+// TypeScript wrappers around a runtime expression, e.g. `x as T` or `x!`.
 const TS_EXPRESSION_WRAPPERS = new Set([
   "TSAsExpression",
   "TSSatisfiesExpression",
   "TSNonNullExpression",
   "TSTypeAssertion",
 ]);
-/** Node fields that don't hold code. */
+// Node fields that don't hold code.
 const NON_CODE_FIELDS = new Set([
   ...["type", "start", "end", "range", "loc"],
   ...[
@@ -31,6 +29,7 @@ const NON_CODE_FIELDS = new Set([
   ],
 ]);
 
+/** Whether `node` is a function declaration, function expression or arrow function. */
 export const isFunction = (node: Node): boolean => FUNCTION_TYPES.has(node?.type);
 
 /** Type-only TypeScript syntax (types, interfaces, …), which has no runtime code to compile. */
@@ -137,8 +136,6 @@ export function bindingNames(pattern: Node): string[] {
   }
 }
 
-// ---------------------------------------------------------------------------- scopes
-
 /** Whether a variable of this kind can be assigned a new value (so it can hold an updated state root). */
 export const isReassignable = (kind: BindingKind): boolean =>
   kind === "let" || kind === "var" || kind === "param" || kind === "catch";
@@ -147,7 +144,7 @@ const withKind =
   (kind: BindingKind) =>
   (name: string): [string, BindingKind] => [name, kind];
 
-/** Names declared directly by a statement (not hoisted `var`s). */
+// `var`s are hoisted to the enclosing function instead; see `hoistedVars`.
 function statementBindings(statement: Node): [string, BindingKind][] {
   switch (statement?.type) {
     case "VariableDeclaration": {
@@ -173,7 +170,7 @@ function statementBindings(statement: Node): [string, BindingKind][] {
   }
 }
 
-/** `var` declarations anywhere below `node`, except inside nested functions. */
+// Nested functions have their own `var` scope, so they are skipped.
 function hoistedVars(node: Node): [string, BindingKind][] {
   const own =
     node.type === "VariableDeclaration" && node.kind === "var"

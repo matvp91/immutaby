@@ -1,8 +1,3 @@
-/**
- * Analysing one `mut:` block: a walk over its body that collects the edits
- * compiling it. The walk's state is a `Context`, created per pass and passed
- * explicitly to the `Writes`, `Aliases` and `State` functions.
- */
 import type * as Options from "../options.ts";
 import * as Aliases from "./aliases.ts";
 import * as Ast from "./ast.ts";
@@ -55,6 +50,10 @@ export interface Input {
   promoted: WeakSet<Ast.Node>;
 }
 
+/**
+ * The state of one analysis pass over a block, created per pass and passed explicitly to the
+ * `Writes`, `Aliases` and `State` functions.
+ */
 export interface Context extends Readonly<Input> {
   readonly scopes: Scope[];
   /** Nodes whose source an enclosing edit replaces; they must not get edits of their own. */
@@ -167,11 +166,8 @@ function compileNode(context: Context, node: Ast.Node, parent: Ast.Node, depth: 
   }
 }
 
-/**
- * `depth` counts the functions (other than inline iteration callbacks, which
- * run synchronously) between the block and `node`: writes there would happen
- * after the block ends.
- */
+// `depth` counts the functions between the block and `node`, other than inline iteration
+// callbacks (which run synchronously): writes inside them would happen after the block ends.
 function visit(context: Context, node: Ast.Node, parent: Ast.Node, depth: number): void {
   if (Ast.isTypeOnly(node)) {
     return;

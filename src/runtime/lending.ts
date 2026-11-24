@@ -1,9 +1,3 @@
-/**
- * Copy-in, reconcile-out: state passed to code the compiler can't see into
- * (e.g. `rename(s.user)`) is replaced by a deep copy the callee may mutate;
- * at the end of the block, unchanged parts are swapped back for the originals.
- */
-
 import type { StateNode } from "./draft.ts";
 import * as Draft from "./draft.ts";
 import * as Path from "./path.ts";
@@ -28,7 +22,6 @@ export function lend(context: Draft.Context, path: Path.Keys, root: StateNode): 
   return newRoot;
 }
 
-/** Whether `copy` has the same own entries as `base` (compared with `Object.is`). */
 function hasSameEntries(copy: StateNode, base: StateNode): boolean {
   if (!Draft.isObject(base) || Object.getPrototypeOf(copy) !== Object.getPrototypeOf(base)) {
     return false;

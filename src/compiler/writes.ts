@@ -1,8 +1,3 @@
-/**
- * Writes to state: assignments, `++`/`--`, `delete` and mutating method calls,
- * plus calls the compiler can't see into, which get a deep copy of the state
- * they receive (sharing is restored when the block ends).
- */
 import * as Ast from "./ast.ts";
 import type * as Block from "./block.ts";
 import * as Calls from "./calls.ts";
@@ -12,7 +7,7 @@ import { CONTEXT, RUNTIME } from "./codegen.ts";
 import { MutError, PromoteToAlias } from "./errors.ts";
 import * as State from "./state.ts";
 
-/** Compiles a statement-level write to a direct path inline. Returns false when it isn't eligible. */
+// Returns false when the write can't be inlined (not a statement, not a direct path, or inlining is off).
 function emitInline(context: Block.Context, statement: Ast.Node, path: State.Path, write: InlineWrite): boolean {
   if (!context.inline || !path.isDirect || statement.type !== "ExpressionStatement") {
     return false;
@@ -23,7 +18,6 @@ function emitInline(context: Block.Context, statement: Ast.Node, path: State.Pat
   return true;
 }
 
-/** Compiles a write to a runtime helper call that rebinds the root. */
 function emitHelper(
   context: Block.Context,
   write: Ast.Node,
@@ -39,6 +33,7 @@ function emitHelper(
   context.emit(write, Codegen.helperWrite(path.root, helperCall, asExpression, resultSlot));
 }
 
+/** Compiles an assignment: a write to state, or a local that may now point into state. */
 export function assignment(context: Block.Context, node: Ast.Node, parent: Ast.Node, depth: number): void {
   const target = Ast.unwrap(node.left);
 
@@ -88,6 +83,7 @@ export function assignment(context: Block.Context, node: Ast.Node, parent: Ast.N
   emitHelper(context, node, parent, path, helperCall);
 }
 
+/** Compiles `++` / `--` on state. */
 export function update(context: Block.Context, node: Ast.Node, parent: Ast.Node, depth: number): void {
   if (Ast.unwrap(node.argument).type !== "MemberExpression") {
     return;
@@ -145,9 +141,6 @@ export function mutatingCall(
   emitHelper(context, call, parent, path, helperCall);
 }
 
-// ---------------------------------------------------------------------------- opaque calls
-
-/** Calls known not to change their arguments: listed in `readonlyCalls`, or read-only globals. */
 function isReadOnlyCall(context: Block.Context, callee: Ast.Node): boolean {
   const name = Ast.dottedName(callee);
   if (!name) {
@@ -159,7 +152,6 @@ function isReadOnlyCall(context: Block.Context, callee: Ast.Node): boolean {
   return State.resolve(context, name.split(".")[0]).kind === "global" && Calls.isReadOnlyGlobal(name);
 }
 
-/** Whether a method call may change its receiver. */
 function mayChangeReceiver(call: Ast.Node, method: string | null): boolean {
   if (!method || !Calls.isReadOnly(method)) {
     return true;
@@ -168,7 +160,6 @@ function mayChangeReceiver(call: Ast.Node, method: string | null): boolean {
   return Calls.isIteration(method) && !Ast.isFunction(call.arguments[0]);
 }
 
-/** Replaces state passed as `argument` to `call` with a deep copy. */
 function lendState(context: Block.Context, call: Ast.Node, argument: Ast.Node, depth: number): void {
   const value = argument.type === "SpreadElement" ? argument.argument : argument;
   const callee = context.sourceOf(call.callee);
