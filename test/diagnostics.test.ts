@@ -21,7 +21,10 @@ it("rejects roots that can't be rebound", () => {
 
 it("rejects writes it can't track yet", () => {
   rejects(`let s = {}; mut: { const f = () => { s.a = 1; }; }`, /nested function/);
-  rejects(`let s = {}; mut: { const open = s.todos.filter((t) => t.done); open[0].done = true; }`, /isn't a plain path/);
+  rejects(
+    `let s = {}; mut: { const open = s.todos.filter((t) => t.done); open[0].done = true; }`,
+    /isn't a plain path/,
+  );
   rejects(`let s = {}; mut: { let u = s.user; u.name = 1; u = {}; }`, /can't be reassigned/);
   rejects(`let s = {}; mut: { const { user } = s; user.name = "x"; }`, /isn't a plain path/);
   rejects(`let s = {}; mut: { setTimeout(() => { s.a = 1; }); }`, /nested function/);
@@ -40,5 +43,7 @@ it("warns at each opaque call", () => {
   ]);
   const quiet = transform(`let s = {}; mut: { format(s.todos); }`, "entry.ts", { readonlyCalls: ["format"] });
   expect(quiet).toBeNull();
-  expect(() => transform(`let s = {}; mut: { rename(s.user); }`, "entry.ts", { opaqueCalls: "error" })).toThrow(/rename/);
+  expect(() => transform(`let s = {}; mut: { rename(s.user); }`, "entry.ts", { opaqueCalls: "error" })).toThrow(
+    /rename/,
+  );
 });

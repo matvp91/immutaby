@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-import immutaby, { type Options } from "./src/index.ts";
+import type { Options } from "./src/index.ts";
+import immutaby from "./src/index.ts";
 
 const runtime = fileURLToPath(new URL("./src/runtime/index.ts", import.meta.url));
 

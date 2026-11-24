@@ -1,5 +1,5 @@
-import { defineConfig } from "rolldown";
 import immutaby from "immutaby";
+import { defineConfig } from "rolldown";
 
 export default defineConfig({
   input: "examples/basic/index.ts",

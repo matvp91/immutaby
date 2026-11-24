@@ -1,0 +1,81 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": ["**", "!**/dist"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUnusedLabels": "off"
+      },
+      "suspicious": {
+        "noConfusingLabels": "off"
+      },
+      "style": {
+        "useImportType": {
+          "level": "error",
+          "fix": "safe",
+          "options": {
+            "style": "separatedType"
+          }
+        },
+        "useExportType": {
+          "level": "error",
+          "fix": "safe"
+        },
+        "useBlockStatements": {
+          "level": "error",
+          "fix": "safe"
+        },
+        "useConst": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["test/**", "bench/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noAssignInExpressions": "off",
+            "useIterableCallbackReturn": "off"
+          },
+          "complexity": {
+            "noCommaOperator": "off"
+          },
+          "correctness": {
+            "noSelfAssign": "off"
+          }
+        }
+      }
+    }
+  ]
+}

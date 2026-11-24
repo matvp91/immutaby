@@ -5,6 +5,7 @@
 import type * as Path from "./path.ts";
 
 /** State is arbitrary user data; the runtime indexes into it dynamically. */
+// biome-ignore lint/suspicious/noExplicitAny: see the comment above.
 export type StateNode = any;
 
 /** Classes marked with this symbol are copied like plain objects (the same symbol as immer's `immerable`). */
@@ -16,7 +17,9 @@ export function isObject(value: unknown): value is object {
 
 /** Plain objects, arrays, Map, Set, null-prototype objects and classes marked `immerable`. */
 export function isDraftable(value: object): boolean {
-  if (Array.isArray(value) || value instanceof Map || value instanceof Set) return true;
+  if (Array.isArray(value) || value instanceof Map || value instanceof Set) {
+    return true;
+  }
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null || immerable in value || Boolean(proto.constructor?.[immerable]);
 }
@@ -26,11 +29,21 @@ export function isDraftable(value: object): boolean {
  * returned as is: they are shared, and writes go straight through (as in immer).
  */
 export function shallowCopy(value: StateNode): StateNode {
-  if (Array.isArray(value)) return value.slice();
-  if (value instanceof Map) return new Map(value);
-  if (value instanceof Set) return new Set(value);
-  if (Object.getPrototypeOf(value) === Object.prototype) return { ...value };
-  if (isDraftable(value)) return Object.assign(Object.create(Object.getPrototypeOf(value)), value);
+  if (Array.isArray(value)) {
+    return value.slice();
+  }
+  if (value instanceof Map) {
+    return new Map(value);
+  }
+  if (value instanceof Set) {
+    return new Set(value);
+  }
+  if (Object.getPrototypeOf(value) === Object.prototype) {
+    return { ...value };
+  }
+  if (isDraftable(value)) {
+    return Object.assign(Object.create(Object.getPrototypeOf(value)), value);
+  }
   return value;
 }
 
@@ -54,9 +67,13 @@ export function createContext(): Context {
 
 /** The block's copy of `value`, made at most once. Primitives and non-draftables pass through. */
 export function owned(context: Context, value: StateNode): StateNode {
-  if (!isObject(value) || context.copies.has(value)) return value;
+  if (!isObject(value) || context.copies.has(value)) {
+    return value;
+  }
   const copy = shallowCopy(value);
-  if (copy !== value) context.copies.add(copy);
+  if (copy !== value) {
+    context.copies.add(copy);
+  }
   return copy;
 }
 
@@ -71,7 +88,9 @@ export function ownAlong(context: Context, root: StateNode, path: Path.Keys, dep
     const key = path[i] as PropertyKey;
     const child = node[key];
     const copy = owned(context, child);
-    if (copy !== child) node[key] = copy;
+    if (copy !== child) {
+      node[key] = copy;
+    }
     node = copy;
   }
   return node;
@@ -79,21 +98,33 @@ export function ownAlong(context: Context, root: StateNode, path: Path.Keys, dep
 
 /** The block's copy of `value` and of everything draftable below it. */
 export function deepCopy(context: Context, value: StateNode, seen = new Map<object, StateNode>()): StateNode {
-  if (!isObject(value)) return value;
+  if (!isObject(value)) {
+    return value;
+  }
   const known = seen.get(value);
-  if (known) return known;
+  if (known) {
+    return known;
+  }
   const copy = owned(context, value);
-  if (!context.copies.has(copy)) return value; // not draftable
+  if (!context.copies.has(copy)) {
+    return value; // not draftable
+  }
   seen.set(value, copy);
 
   if (copy instanceof Map) {
-    for (const [key, child] of copy) copy.set(key, deepCopy(context, child, seen));
+    for (const [key, child] of copy) {
+      copy.set(key, deepCopy(context, child, seen));
+    }
   } else if (copy instanceof Set) {
     const items = [...copy];
     copy.clear();
-    for (const item of items) copy.add(deepCopy(context, item, seen));
+    for (const item of items) {
+      copy.add(deepCopy(context, item, seen));
+    }
   } else {
-    for (const key of Object.keys(copy)) copy[key] = deepCopy(context, copy[key], seen);
+    for (const key of Object.keys(copy)) {
+      copy[key] = deepCopy(context, copy[key], seen);
+    }
   }
   return copy;
 }
@@ -108,13 +139,21 @@ function throwFrozen(): never {
  * throwing mutators, since `Object.freeze` doesn't stop `set`/`add`.
  */
 export function freeze<T>(value: T): T {
-  if (!isObject(value) || Object.isFrozen(value) || !isDraftable(value)) return value;
+  if (!isObject(value) || Object.isFrozen(value) || !isDraftable(value)) {
+    return value;
+  }
   let children: Iterable<unknown> = Object.values(value);
   if (value instanceof Map || value instanceof Set) {
-    for (const method of ["set", "add", "delete", "clear"]) if (method in value) Object.defineProperty(value, method, { value: throwFrozen });
+    for (const method of ["set", "add", "delete", "clear"]) {
+      if (method in value) {
+        Object.defineProperty(value, method, { value: throwFrozen });
+      }
+    }
     children = value.values();
   }
   Object.freeze(value);
-  for (const child of children) freeze(child);
+  for (const child of children) {
+    freeze(child);
+  }
   return value;
 }

@@ -1,6 +1,7 @@
 import { produce, setAutoFreeze } from "immer";
 import { Bench } from "tinybench";
-import { createState, type State, type Todo } from "./state.ts";
+import type { State, Todo } from "./state.ts";
+import { createState } from "./state.ts";
 
 setAutoFreeze(false);
 
@@ -37,7 +38,10 @@ const suites: Record<string, Record<"spread" | "immutaby" | "immer", () => void>
   "three writes on one path": {
     spread: () => {
       const s = small;
-      sink = { ...s, user: { ...s.user, name: "Grace", profile: { ...s.user.profile, email: "g@example.com", visits: 1 } } };
+      sink = {
+        ...s,
+        user: { ...s.user, name: "Grace", profile: { ...s.user.profile, email: "g@example.com", visits: 1 } },
+      };
     },
     immutaby: () => {
       let s = small;
@@ -102,13 +106,13 @@ const suites: Record<string, Record<"spread" | "immutaby" | "immer", () => void>
     immutaby: () => {
       let s = large;
       mut: {
-        s.todos.find((t) => t.id === target)!.title = "found";
+        (s.todos.find((t) => t.id === target) as Todo).title = "found";
       }
       sink = s;
     },
     immer: () => {
       sink = produce(large, (d) => {
-        d.todos.find((t) => t.id === target)!.title = "found";
+        (d.todos.find((t) => t.id === target) as Todo).title = "found";
       });
     },
   },
@@ -157,14 +161,21 @@ const suites: Record<string, Record<"spread" | "immutaby" | "immer", () => void>
 const rows: Record<string, Record<string, string>> = {};
 for (const [name, variants] of Object.entries(suites)) {
   const bench = new Bench({ time: 300 });
-  for (const [variant, fn] of Object.entries(variants)) bench.add(variant, fn);
+  for (const [variant, fn] of Object.entries(variants)) {
+    bench.add(variant, fn);
+  }
   await bench.run();
   const opsPerSecond = (variant: string) => {
-    const result = bench.getTask(variant)!.result;
+    const task = bench.getTask(variant);
+    if (!task) {
+      throw new Error(`no benchmark task named "${variant}"`);
+    }
+    const { result } = task;
     return "throughput" in result ? result.throughput.mean : NaN;
   };
   const spread = opsPerSecond("spread");
-  const format = (variant: string) => `${(opsPerSecond(variant) / 1e6).toFixed(2)}M ops/s (${(spread / opsPerSecond(variant)).toFixed(1)}×)`;
+  const format = (variant: string) =>
+    `${(opsPerSecond(variant) / 1e6).toFixed(2)}M ops/s (${(spread / opsPerSecond(variant)).toFixed(1)}×)`;
   rows[name] = { spread: `${(spread / 1e6).toFixed(2)}M ops/s`, immutaby: format("immutaby"), immer: format("immer") };
 }
 console.table(rows);

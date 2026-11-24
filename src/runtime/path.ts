@@ -5,8 +5,9 @@
  * taking it last means it is read after the right-hand side has run, so
  * writes nested in the right-hand side are kept.
  */
-import * as Draft from "./draft.ts";
+
 import type { StateNode } from "./draft.ts";
+import * as Draft from "./draft.ts";
 
 /**
  * A key resolved at runtime: `s.todos.find(p)` becomes the index of the first
@@ -37,8 +38,11 @@ export function findIndexKey(method: FindIndexKey["method"], predicate: FindInde
 export function read(root: StateNode, path: Keys, depth = path.length): StateNode {
   let node = root;
   for (let i = 0; i < depth; i++) {
-    const segment = path[i];
-    const key = segment instanceof FindIndexKey ? (path[i] = node[segment.method](segment.predicate) as number) : segment;
+    let key = path[i];
+    if (key instanceof FindIndexKey) {
+      key = node[key.method](key.predicate) as number;
+      path[i] = key;
+    }
     node = node[key];
   }
   return node;
@@ -60,7 +64,9 @@ export function write(context: Draft.Context, path: Keys, value: unknown, root: 
   context.result = value;
   const last = path.length - 1;
   const key = path[last] as Key;
-  if (isUnchanged(read(root, path, last), key, value)) return root;
+  if (isUnchanged(read(root, path, last), key, value)) {
+    return root;
+  }
 
   const newRoot = Draft.owned(context, root);
   Draft.ownAlong(context, newRoot, path, last)[key] = value;
@@ -81,36 +87,68 @@ export function remove(context: Draft.Context, path: Keys, root: StateNode): Sta
   context.result = true;
   const last = path.length - 1;
   const key = path[last] as Key;
-  if (!(key in read(root, path, last))) return root;
+  if (!(key in read(root, path, last))) {
+    return root;
+  }
 
   const newRoot = Draft.owned(context, root);
   delete Draft.ownAlong(context, newRoot, path, last)[key];
   return newRoot;
 }
 
-const MUTATING_ARRAY_METHODS = new Set<Key>(["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin"]);
+const MUTATING_ARRAY_METHODS = new Set<Key>([
+  "push",
+  "pop",
+  "shift",
+  "unshift",
+  "splice",
+  "sort",
+  "reverse",
+  "fill",
+  "copyWithin",
+]);
 
 /** Whether calling `method` with `args` on `target` would change it (calls that change nothing don't copy). */
 function wouldMutate(target: StateNode, method: Key, args: unknown[]): boolean {
-  if (Array.isArray(target)) return MUTATING_ARRAY_METHODS.has(method);
+  if (Array.isArray(target)) {
+    return MUTATING_ARRAY_METHODS.has(method);
+  }
 
   if (target instanceof Map) {
-    if (method === "set") return !(target.has(args[0]) && Object.is(target.get(args[0]), args[1]));
-    if (method === "delete") return target.has(args[0]);
-    if (method === "clear") return target.size > 0;
+    if (method === "set") {
+      return !(target.has(args[0]) && Object.is(target.get(args[0]), args[1]));
+    }
+    if (method === "delete") {
+      return target.has(args[0]);
+    }
+    if (method === "clear") {
+      return target.size > 0;
+    }
   }
 
   if (target instanceof Set) {
-    if (method === "add") return !target.has(args[0]);
-    if (method === "delete") return target.has(args[0]);
-    if (method === "clear") return target.size > 0;
+    if (method === "add") {
+      return !target.has(args[0]);
+    }
+    if (method === "delete") {
+      return target.has(args[0]);
+    }
+    if (method === "clear") {
+      return target.size > 0;
+    }
   }
 
   return false;
 }
 
 /** `root.path.method(...args)` for a method that may mutate its receiver (array, Map and Set mutators). */
-export function callMethod(context: Draft.Context, path: Keys, method: Key, args: unknown[], root: StateNode): StateNode {
+export function callMethod(
+  context: Draft.Context,
+  path: Keys,
+  method: Key,
+  args: unknown[],
+  root: StateNode,
+): StateNode {
   const target = read(root, path);
   if (!wouldMutate(target, method, args)) {
     context.result = target[method](...args);
@@ -124,13 +162,17 @@ export function callMethod(context: Draft.Context, path: Keys, method: Key, args
 
 /** Compiled `for...of` loops over state are index loops, which only work on arrays. */
 export function assertArray(value: unknown, loop = "for...of"): asserts value is unknown[] {
-  if (!Array.isArray(value)) throw new TypeError(`mut: ${loop} over state supports arrays only`);
+  if (!Array.isArray(value)) {
+    throw new TypeError(`mut: ${loop} over state supports arrays only`);
+  }
 }
 
 /** `for (const item of root.path)` where keys aren't static: yields the path of each element. */
 export function* elements(getRoot: () => StateNode, path: Keys): Generator<Keys> {
   assertArray(read(getRoot(), path));
-  for (let i = 0; i < read(getRoot(), path).length; i++) yield [...path, i];
+  for (let i = 0; i < read(getRoot(), path).length; i++) {
+    yield [...path, i];
+  }
 }
 
 /**
@@ -144,7 +186,8 @@ export function iterate(path: Keys, method: string, args: unknown[], root: State
   const elementPath = (index: number): Keys => [...path, index];
   const withPaths =
     method === "reduce" || method === "reduceRight"
-      ? (accumulator: unknown, _element: unknown, index: number, array: unknown) => callback(accumulator, elementPath(index), index, array)
+      ? (accumulator: unknown, _element: unknown, index: number, array: unknown) =>
+          callback(accumulator, elementPath(index), index, array)
       : (_element: unknown, index: number, array: unknown) => callback(elementPath(index), index, array);
   return (list as StateNode)[method](withPaths, ...rest);
 }

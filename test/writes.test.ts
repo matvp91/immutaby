@@ -25,7 +25,7 @@ it("copies the written path and shares the rest", () => {
 
 it("copies each node once across several writes", () => {
   let s = state;
-  let first;
+  let first: unknown;
   mut: {
     s.user.name = "Ada";
     first = s.user;
@@ -45,7 +45,7 @@ it("returns the same root when nothing changes", () => {
 });
 
 it("compound, logical and update operators", () => {
-  let s: any = state;
+  let s: typeof state & { user: { nick?: string } } = state;
   mut: {
     s.count += 5;
     s.user.age *= 3;
@@ -81,7 +81,11 @@ it("delete", () => {
 it("writes inside if and for", () => {
   let s = state;
   mut: {
-    for (let i = 0; i < s.todos.length; i++) if (s.todos[i].done) s.todos[i].done = false;
+    for (let i = 0; i < s.todos.length; i++) {
+      if (s.todos[i].done) {
+        s.todos[i].done = false;
+      }
+    }
   }
   expect(s.todos.map((t) => t.done)).toEqual([false, false]);
   expect(s.todos[0]).toBe(state.todos[0]);
@@ -91,14 +95,16 @@ it("break mut keeps earlier writes", () => {
   let s = state;
   mut: {
     s.count = 1;
-    if (s.count) break mut;
+    if (s.count) {
+      break mut;
+    }
     s.count = 2;
   }
   expect(s.count).toBe(1);
 });
 
 it("writes used as expressions return their JS value", () => {
-  let s: any = state;
+  let s = state;
   let out: unknown[] = [];
   mut: {
     out.push((s.count = 3), s.count++, ++s.count, delete s.settings.theme, (s.user.age += 1));
@@ -125,8 +131,9 @@ it("works on parameters and single statements", () => {
 it("handles TypeScript syntax in paths", () => {
   let s: { a: { b: number } | null } = freeze({ a: { b: 1 } });
   mut: {
+    // biome-ignore lint/style/noNonNullAssertion: this test checks that the plugin handles `!` in a write path.
     s.a!.b = 2;
-    (s.a as any).c = 3;
+    (s.a as Record<string, number>).c = 3;
   }
   expect(s).toEqual({ a: { b: 2, c: 3 } });
 });

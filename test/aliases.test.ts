@@ -10,6 +10,7 @@ const state = freeze({
   ],
   lists: [{ items: [1] }, { items: [2] }],
 });
+type Todo = (typeof state.todos)[number];
 
 it("writes through a local alias", () => {
   let s = state;
@@ -47,7 +48,11 @@ it("method calls through an alias", () => {
 it("for...of over state", () => {
   let s = state;
   mut: {
-    for (const todo of s.todos) if (!todo.done) todo.title = todo.title.toUpperCase();
+    for (const todo of s.todos) {
+      if (!todo.done) {
+        todo.title = todo.title.toUpperCase();
+      }
+    }
   }
   expect(s.todos.map((t) => t.title)).toEqual(["A", "B", "c"]);
   expect(s.todos[2]).toBe(state.todos[2]);
@@ -57,7 +62,9 @@ it("forEach callbacks", () => {
   let s = state;
   mut: {
     s.todos.forEach((todo, i) => {
-      if (i < 2) todo.done = true;
+      if (i < 2) {
+        todo.done = true;
+      }
     });
   }
   expect(s.todos.map((t) => t.done)).toEqual([true, true, true]);
@@ -80,7 +87,7 @@ it("reduce callbacks get the element second", () => {
 it("writes through find", () => {
   let s = state;
   mut: {
-    s.todos.find((t) => t.id === 2)!.title = "B";
+    (s.todos.find((t) => t.id === 2) as Todo).title = "B";
   }
   expect(s.todos[1].title).toBe("B");
   expect(s.todos[0]).toBe(state.todos[0]);
@@ -113,7 +120,7 @@ it("callbacks without parentheses or an index parameter", () => {
   let s = state;
   mut: {
     s.todos.forEach((todo) => (todo.title = "x"));
-    s.todos.forEach(todo => {
+    s.todos.forEach((todo) => {
       todo.done = true;
     });
   }
@@ -132,9 +139,13 @@ it("falls back to runtime paths when keys aren't static", () => {
       void list;
       s.lists[j].items[i] = item * 10;
     });
-    for (const item of s.lists[j].items) void item;
+    for (const item of s.lists[j].items) {
+      void item;
+    }
     const items = s.lists[j].items;
-    for (const [index] of items.entries()) items[index]++;
+    for (const [index] of items.entries()) {
+      items[index]++;
+    }
   }
   expect(s.lists[1].items).toEqual([21]);
   expect(s.lists[0]).toBe(state.lists[0]);
@@ -156,7 +167,9 @@ it("for...of over a non-array state value throws", () => {
   let s = { tags: new Set(["a"]) as unknown as { label: string }[] };
   expect(() => {
     mut: {
-      for (const tag of s.tags) tag.label = "x";
+      for (const tag of s.tags) {
+        tag.label = "x";
+      }
     }
   }).toThrow(/arrays only/);
 });

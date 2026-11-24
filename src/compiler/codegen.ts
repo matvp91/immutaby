@@ -52,7 +52,12 @@ export const joinKeys = (keys: PathKey[]): Part[] => keys.flatMap((key, i) => (i
  * A helper call that rebinds the root: `root = helper(..., root)` as a
  * statement, or `(root = helper(..., root), context.slot)` as an expression.
  */
-export function helperWrite(root: string, helperCall: Part[], asExpression: boolean, resultSlot: "result" | "previousValue"): Part[] {
+export function helperWrite(
+  root: string,
+  helperCall: Part[],
+  asExpression: boolean,
+  resultSlot: "result" | "previousValue",
+): Part[] {
   const write = [`${root} = ${RUNTIME}.`, ...helperCall, `, ${root})`];
   return asExpression ? ["(", ...write, `, ${CONTEXT}.${resultSlot})`] : write;
 }
@@ -83,19 +88,28 @@ export interface InlineVariables {
  * check keeps that correct through loops, branches and anything else that
  * rebinds the root.
  */
-export function inlineWrite(root: string, keys: PathKey[], write: InlineWrite, sourceOf: (node: Ast.Node) => string, variables: InlineVariables): Part[] {
+export function inlineWrite(
+  root: string,
+  keys: PathKey[],
+  write: InlineWrite,
+  sourceOf: (node: Ast.Node) => string,
+  variables: InlineVariables,
+): Part[] {
   const code: Part[] = ["{ "];
   // Code reading each node on the path (root first), and the source-based name of its copy variable.
   const nodes = [root];
   const names = [root];
   let lastKey = "";
   keys.forEach(([key], i) => {
-    if (typeof key === "string") lastKey = key;
-    else {
+    if (typeof key === "string") {
+      lastKey = key;
+    } else {
       lastKey = variables.nextKey();
       code.push(`const ${lastKey} = `, key, "; ");
     }
-    if (i === keys.length - 1) return;
+    if (i === keys.length - 1) {
+      return;
+    }
     nodes.push(member(nodes[i], lastKey));
     names.push(`${names[i]}[${typeof key === "string" ? key : sourceOf(key)}]`);
   });
@@ -103,9 +117,15 @@ export function inlineWrite(root: string, keys: PathKey[], write: InlineWrite, s
   const parent = nodes[nodes.length - 1];
   const target = member(parent, lastKey);
   const value = `${CONTEXT}_v`;
-  if (write.kind === "set") code.push(`const ${value} = `, write.value, "; ");
-  if (write.kind === "compound") code.push(`const ${value} = ${target} ${write.operator} (`, write.value, "); ");
-  if (write.kind === "update") code.push(`let ${value} = ${target}; ${value}${write.operator}; `);
+  if (write.kind === "set") {
+    code.push(`const ${value} = `, write.value, "; ");
+  }
+  if (write.kind === "compound") {
+    code.push(`const ${value} = ${target} ${write.operator} (`, write.value, "); ");
+  }
+  if (write.kind === "update") {
+    code.push(`let ${value} = ${target}; ${value}${write.operator}; `);
+  }
 
   const copies = nodes
     .map((node, i) => {
@@ -113,8 +133,11 @@ export function inlineWrite(root: string, keys: PathKey[], write: InlineWrite, s
       return `if (${node} !== ${copy}) ${node} = ${copy} = ${RUNTIME}.shallowCopy(${node}); `;
     })
     .join("");
-  if (write.kind === "delete") code.push(`if (${lastKey} in ${parent}) { ${copies}delete ${target}; } }`);
-  else code.push(`if (!${RUNTIME}.isUnchanged(${parent}, ${lastKey}, ${value})) { ${copies}${target} = ${value}; } }`);
+  if (write.kind === "delete") {
+    code.push(`if (${lastKey} in ${parent}) { ${copies}delete ${target}; } }`);
+  } else {
+    code.push(`if (!${RUNTIME}.isUnchanged(${parent}, ${lastKey}, ${value})) { ${copies}${target} = ${value}; } }`);
+  }
   return code;
 }
 
@@ -128,14 +151,25 @@ export interface BlockWrapperInput {
 }
 
 /** Code opening and closing a compiled block's body. */
-export function blockWrapper({ usesContext, copyVariables, lentRoots, frozenRoots }: BlockWrapperInput): { open: string; close: string } {
+export function blockWrapper({ usesContext, copyVariables, lentRoots, frozenRoots }: BlockWrapperInput): {
+  open: string;
+  close: string;
+} {
   const open: string[] = [];
-  if (usesContext) open.push(`const ${CONTEXT} = ${RUNTIME}.createContext();`);
-  if (copyVariables.length) open.push(`let ${copyVariables.join(", ")};`);
-  if (!lentRoots.length && !frozenRoots.length) return { open: open.join(" "), close: "" };
+  if (usesContext) {
+    open.push(`const ${CONTEXT} = ${RUNTIME}.createContext();`);
+  }
+  if (copyVariables.length) {
+    open.push(`let ${copyVariables.join(", ")};`);
+  }
+  if (!lentRoots.length && !frozenRoots.length) {
+    return { open: open.join(" "), close: "" };
+  }
 
   const base = (root: string) => `${CONTEXT}_base_${root}`;
-  if (lentRoots.length) open.push(`const ${lentRoots.map((root) => `${base(root)} = ${root}`).join(", ")};`);
+  if (lentRoots.length) {
+    open.push(`const ${lentRoots.map((root) => `${base(root)} = ${root}`).join(", ")};`);
+  }
   open.push("try {");
   const atEnd = [
     ...lentRoots.map((root) => `${root} = ${RUNTIME}.restoreSharing(${CONTEXT}, ${root}, ${base(root)});`),
@@ -144,4 +178,5 @@ export function blockWrapper({ usesContext, copyVariables, lentRoots, frozenRoot
   return { open: open.join(" "), close: ` } finally { ${atEnd.join(" ")} }` };
 }
 
-export const runtimeImport = (specifier: string): string => `import * as ${RUNTIME} from ${JSON.stringify(specifier)};\n`;
+export const runtimeImport = (specifier: string): string =>
+  `import * as ${RUNTIME} from ${JSON.stringify(specifier)};\n`;

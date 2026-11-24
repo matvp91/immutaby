@@ -3,10 +3,10 @@ import { MutError } from "./compiler/errors.ts";
 import { MAY_CONTAIN_MUT_BLOCK, transform } from "./compiler/transform.ts";
 import type * as Options from "./options.ts";
 
-export { transform, type TransformResult } from "./compiler/transform.ts";
 export { MutError, type Warning } from "./compiler/errors.ts";
-export { immerable } from "./runtime/index.ts";
+export { type TransformResult, transform } from "./compiler/transform.ts";
 export type { Input as Options } from "./options.ts";
+export { immerable } from "./runtime/index.ts";
 
 const SCRIPT_MODULE = /\.[cm]?[jt]sx?(?:$|\?)/;
 
@@ -19,11 +19,17 @@ export default function immutaby(options: Options.Input = {}): Plugin {
       handler(code, id) {
         try {
           const result = transform(code, id, options);
-          if (!result) return null;
-          for (const warning of result.warnings) this.warn(warning.message, warning.pos);
+          if (!result) {
+            return null;
+          }
+          for (const warning of result.warnings) {
+            this.warn(warning.message, warning.pos);
+          }
           return { code: result.code, map: result.map };
         } catch (error) {
-          if (error instanceof MutError) this.error(error.message, error.pos);
+          if (error instanceof MutError) {
+            this.error(error.message, error.pos);
+          }
           throw error;
         }
       },

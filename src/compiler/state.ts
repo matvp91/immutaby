@@ -4,8 +4,9 @@
  */
 import * as Ast from "./ast.ts";
 import type * as Block from "./block.ts";
-import { isPlainKey, joinArguments, RUNTIME, type Alias, type PathKey } from "./codegen.ts";
 import * as Calls from "./calls.ts";
+import type { Alias, PathKey } from "./codegen.ts";
+import { isPlainKey, joinArguments, RUNTIME } from "./codegen.ts";
 import { MutError, PromoteToAlias } from "./errors.ts";
 
 export type Binding =
@@ -23,26 +24,41 @@ export type Binding =
 export function resolve(context: Block.Context, name: string): Binding {
   for (let i = context.scopes.length - 1; i >= 0; i--) {
     const scope = context.scopes[i];
-    if (!scope.bindings.has(name)) continue;
-    if (scope.aliases.has(name)) return { kind: "alias", alias: scope.aliases.get(name)! };
-    if (scope.maybeState.has(name)) return { kind: "maybeState", promotable: scope.maybeState.get(name) };
+    if (!scope.bindings.has(name)) {
+      continue;
+    }
+    const alias = scope.aliases.get(name);
+    if (alias) {
+      return { kind: "alias", alias };
+    }
+    if (scope.maybeState.has(name)) {
+      return { kind: "maybeState", promotable: scope.maybeState.get(name) };
+    }
     return { kind: "local" };
   }
   for (let i = context.enclosing.length - 1; i >= 0; i--) {
     const declaredAs = Ast.scopeBindings(context.enclosing[i])?.get(name);
-    if (declaredAs) return { kind: "root", declaredAs };
+    if (declaredAs) {
+      return { kind: "root", declaredAs };
+    }
   }
   return { kind: "global" };
 }
 
-const scopeDeclaring = (context: Block.Context, name: string): Block.Scope | undefined => context.scopes.findLast((scope) => scope.bindings.has(name));
+const scopeDeclaring = (context: Block.Context, name: string): Block.Scope | undefined =>
+  context.scopes.findLast((scope) => scope.bindings.has(name));
 
 export function markMaybeState(context: Block.Context, name: string, promotable: Ast.Node | null): void {
   scopeDeclaring(context, name)?.maybeState.set(name, promotable);
 }
 
 /** Compiles the local bound by `binding` as `alias`; its declaration and the `replaced` nodes get no edits of their own. */
-export function declareAlias(context: Block.Context, binding: Ast.Node, alias: Alias, replaced: readonly Ast.Node[] = []): void {
+export function declareAlias(
+  context: Block.Context,
+  binding: Ast.Node,
+  alias: Alias,
+  replaced: readonly Ast.Node[] = [],
+): void {
   scopeDeclaring(context, binding.name)?.aliases.set(binding.name, alias);
   context.markReplaced([binding, ...replaced]);
 }
@@ -59,7 +75,9 @@ export function promotableBase(context: Block.Context, expression: Ast.Node): As
 
 /** Whether `node` (outside nested functions) reads anything that may hold state. */
 export function touches(context: Block.Context, node: Ast.Node): boolean {
-  if (!node || Ast.isFunction(node) || Ast.isTypeOnly(node)) return false;
+  if (!node || Ast.isFunction(node) || Ast.isTypeOnly(node)) {
+    return false;
+  }
   if (node.type === "Identifier") {
     const { kind } = resolve(context, node.name);
     return kind !== "local" && kind !== "global";
@@ -104,13 +122,26 @@ export function aliasFor(path: Path, holder: string): { alias: Alias; needsHolde
 }
 
 /** Throws unless `root` can be rebound to an updated value from here. */
-export function assertWritableRoot(context: Block.Context, root: string, at: Ast.Node, depth: number, verb: string): void {
+export function assertWritableRoot(
+  context: Block.Context,
+  root: string,
+  at: Ast.Node,
+  depth: number,
+  verb: string,
+): void {
   const binding = resolve(context, root);
-  if (binding.kind !== "root") return;
-  if (!Ast.isReassignable(binding.declaredAs)) {
-    throw new MutError(`\`${root}\` can't be rebound (declared as ${binding.declaredAs}); use \`let\` so it can hold the new value`, at.start);
+  if (binding.kind !== "root") {
+    return;
   }
-  if (depth > 0) throw new MutError(`${verb} to \`${root}\` inside a nested function aren't supported yet`, at.start);
+  if (!Ast.isReassignable(binding.declaredAs)) {
+    throw new MutError(
+      `\`${root}\` can't be rebound (declared as ${binding.declaredAs}); use \`let\` so it can hold the new value`,
+      at.start,
+    );
+  }
+  if (depth > 0) {
+    throw new MutError(`${verb} to \`${root}\` inside a nested function aren't supported yet`, at.start);
+  }
 }
 
 /**
@@ -132,32 +163,61 @@ export function pathOf(context: Block.Context, expression: Ast.Node, query: Path
     const findIndexMethod = node.type === "CallExpression" ? Calls.findIndexFor(Ast.methodName(node) ?? "") : undefined;
     if (findIndexMethod && !node.optional && !Ast.unwrap(node.callee).optional && node.arguments.length) {
       const list = pathOf(context, Ast.unwrap(node.callee).object, query);
-      if (!list) return null;
-      const findKey = [`${RUNTIME}.findIndexKey(${JSON.stringify(findIndexMethod)}, `, ...joinArguments(node.arguments), ")"];
-      return { ...list, keys: [...list.keys, findKey, ...keys], replaces: [...list.replaces, node], hasFindKey: true, isDirect: false };
+      if (!list) {
+        return null;
+      }
+      const findKey = [
+        `${RUNTIME}.findIndexKey(${JSON.stringify(findIndexMethod)}, `,
+        ...joinArguments(node.arguments),
+        ")",
+      ];
+      return {
+        ...list,
+        keys: [...list.keys, findKey, ...keys],
+        replaces: [...list.replaces, node],
+        hasFindKey: true,
+        isDirect: false,
+      };
     }
     break;
   }
 
   if (node.type === "Identifier") {
     const binding = resolve(context, node.name);
-    if (binding.kind === "local") return null;
+    if (binding.kind === "local") {
+      return null;
+    }
     if (binding.kind === "alias" || binding.kind === "root") {
       const root = binding.kind === "alias" ? binding.alias.root : node.name;
-      if (forWrite) assertWritableRoot(context, root, node, depth, verb);
+      if (forWrite) {
+        assertWritableRoot(context, root, node, depth, verb);
+      }
       const fullKeys = binding.kind === "alias" ? [...binding.alias.keys.map((key) => [key]), ...keys] : keys;
       return { root, keys: fullKeys, replaces: [node], hasFindKey: false, isDirect: true };
     }
-    if (!forWrite) return null;
+    if (!forWrite) {
+      return null;
+    }
     if (binding.kind === "maybeState") {
-      if (binding.promotable) throw new PromoteToAlias(binding.promotable);
-      throw new MutError(`\`${node.name}\` may point into state but isn't a plain path (like \`s.a.b\`), so ${verb} through it can't be tracked`, node.start);
+      if (binding.promotable) {
+        throw new PromoteToAlias(binding.promotable);
+      }
+      throw new MutError(
+        `\`${node.name}\` may point into state but isn't a plain path (like \`s.a.b\`), so ${verb} through it can't be tracked`,
+        node.start,
+      );
     }
     throw new MutError(`\`${node.name}\` isn't declared in this module`, node.start);
   }
 
-  if (!forWrite) return null;
-  if (node.type === "ThisExpression") throw new MutError(`${verb} through \`this\` aren't supported; copy it into a \`let\` first`, node.start);
-  if (touches(context, node)) throw new MutError(`can't track ${verb} through this expression yet`, node.start);
+  if (!forWrite) {
+    return null;
+  }
+  if (node.type === "ThisExpression") {
+    throw new MutError(`${verb} through \`this\` aren't supported; copy it into a \`let\` first`, node.start);
+  }
+  if (touches(context, node)) {
+    throw new MutError(`can't track ${verb} through this expression yet`, node.start);
+  }
   return null;
 }

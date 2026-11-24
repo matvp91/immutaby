@@ -22,7 +22,7 @@ It aims for the same capabilities as immer (`produce`), but:
 
 Background: the TC39 Records & Tuples proposal (value-semantics immutable data)
 was withdrawn in 2025. immutaby does **not** try to replace that. Its goal is
-ergonomic immutable *updates* with reference equality, which is what React,
+ergonomic immutable _updates_ with reference equality, which is what React,
 selectors and memoization rely on.
 
 ## 2. Goals, non-goals, anti-goals
@@ -76,34 +76,35 @@ selectors and memoization rely on.
 
 **Surface syntax**
 
-| Option | Verdict |
-|---|---|
+| Option                                   | Verdict                                                                     |
+| ---------------------------------------- | --------------------------------------------------------------------------- |
 | immer-style `produce(state, d => {...})` | Familiar, but keeps the callback and draft concepts the user wants to drop. |
-| Real custom syntax (`:=`, `#{}`) | Breaks TS, editors, linters and formatters. Rejected. |
-| `set(state.a.b, v)` path-as-argument | Hard to type in TS (the return type must be the root). |
-| `let s = edit(state)` marker | The draft region ends implicitly, which surprises people. |
-| **`mut: { ... }` labeled block** | **Chosen.** Valid JS/TS, explicit region, zero tooling cost. |
+| Real custom syntax (`:=`, `#{}`)         | Breaks TS, editors, linters and formatters. Rejected.                       |
+| `set(state.a.b, v)` path-as-argument     | Hard to type in TS (the return type must be the root).                      |
+| `let s = edit(state)` marker             | The draft region ends implicitly, which surprises people.                   |
+| **`mut: { ... }` labeled block**         | **Chosen.** Valid JS/TS, explicit region, zero tooling cost.                |
 
 **Mutation inside code the compiler can't see** (e.g. `rename(s.user)`)
 
-| Option | Verdict |
-|---|---|
-| Build error, require return-a-new-value helpers | Fastest, but not immer parity. |
-| **Copy-in, reconcile-out** | **Chosen.** Parity with immer, cost confined to those call sites, a warning at each. |
-| Compile helpers across modules | Possible future improvement on top. Can't cover npm callbacks or dynamic calls alone. |
+| Option                                          | Verdict                                                                               |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Build error, require return-a-new-value helpers | Fastest, but not immer parity.                                                        |
+| **Copy-in, reconcile-out**                      | **Chosen.** Parity with immer, cost confined to those call sites, a warning at each.  |
+| Compile helpers across modules                  | Possible future improvement on top. Can't cover npm callbacks or dynamic calls alone. |
 
 **Plugin implementation**
 
-| Option | Verdict |
-|---|---|
+| Option                                              | Verdict                                                              |
+| --------------------------------------------------- | -------------------------------------------------------------------- |
 | **JS/TS plugin on Rolldown's parser + MagicString** | **Chosen.** Lowest build cost without Rust; the core stays portable. |
-| Babel plugin wrapped for Rolldown | Second slow parse and a heavy dependency. |
-| Native Rust / oxc transformer | Rolldown can't load third-party Rust plugins. |
+| Babel plugin wrapped for Rolldown                   | Second slow parse and a heavy dependency.                            |
+| Native Rust / oxc transformer                       | Rolldown can't load third-party Rust plugins.                        |
 
 **Generated code**: a **two-layer** design, chosen.
-1. A *general path*: every write lowers to runtime-helper calls. This is the
+
+1. A _general path_: every write lowers to runtime-helper calls. This is the
    correct baseline and is built first.
-2. An *inline layer*: statically analysable writes (straight-line code, static
+2. An _inline layer_: statically analysable writes (straight-line code, static
    keys, known copy state) are emitted as inline spreads/copies. The general
    path remains for dynamic cases.
 
@@ -132,20 +133,20 @@ throughout, because reconciling only knows the helpers' copies.
 
 ### 5.2 Roots
 
-- A **root** is an identifier declared *outside* the block that is the base of a
+- A **root** is an identifier declared _outside_ the block that is the base of a
   write path inside the block (`s` in `s.user.name = x`).
 - A root must be reassignable: `let`, `var` or a function parameter. A root
   declared with `const`, an import, or an undeclared/global identifier is a
   **build error** with a code frame and a suggested fix.
 - Writing through `this` (`this.state.x = 1`) is a build error in v1. The fix it
-  suggests is `let s = this.state; mut: {...}; this.state = s;` *(builder may
-  revisit)*.
+  suggests is `let s = this.state; mut: {...}; this.state = s;` _(builder may
+  revisit)_.
 - The base value is **never mutated**. The root variable is reassigned to the new
   root **eagerly**, at the first copy. If the block throws or returns midway,
   the root holds the writes applied so far and the base is untouched.
-  *(Difference from immer, which discards everything on throw. Our call: the
-  block reads as ordinary sequential code.)*
-- Identifiers declared *inside* the block are ordinary locals and mutate
+  _(Difference from immer, which discards everything on throw. Our call: the
+  block reads as ordinary sequential code.)_
+- Identifiers declared _inside_ the block are ordinary locals and mutate
   normally, unless they are aliases (§5.4).
 
 ### 5.3 Writes
@@ -184,7 +185,7 @@ Copy-on-write rules:
   read the element by index (`s.todos[i]`, adding the index parameter if
   needed), and `for...of` over state becomes an index loop. Keys that aren't
   static fall back to runtime paths (`iterate`, `each`). As a consequence, an
-  alias follows its *position*: after `s.todos.splice(0, 1)`, an alias of
+  alias follows its _position_: after `s.todos.splice(0, 1)`, an alias of
   `s.todos[1]` points at what is now at index 1.
 - Locals become aliases only when the block writes through them; read-only locals
   and callbacks compile to plain code with no overhead.
@@ -204,16 +205,16 @@ All method calls on a root/alias path go through runtime dispatch (no type info)
 
   The receiver is copied once, then the method runs on the copy. Return values
   match the native ones.
-- **Subset-returning reads** become *views*, so writes through the result land in
+- **Subset-returning reads** become _views_, so writes through the result land in
   the original structure: Array `find findLast filter slice at`, indexing
   `arr[i]`, Map `get`, iteration (`for...of`, `entries`, `values`).
   Example: `s.todos.find(t => t.id === id).title = "x"`.
 - **Inline callbacks** to array methods (`forEach map filter find findLast some
   every reduce reduceRight flatMap findIndex findLastIndex`) are compiled. The
   element parameter is an alias of `arr[i]`, so `s.todos.forEach(t => { t.done = true })`
-  works and untouched elements stay shared. *(immer's own `enableArrayMethods`
+  works and untouched elements stay shared. _(immer's own `enableArrayMethods`
   mode does not allow writes in `filter` callbacks; we do, because it falls out
-  of the same alias mechanism.)*
+  of the same alias mechanism.)_
 - **Primitive-returning reads** (`indexOf includes join some every`, `size`,
   `has` …) run on the current value, with nothing to track.
 - **Non-subset transforms** (`map concat flat flatMap` results, `toSorted`, `with`)
@@ -242,7 +243,7 @@ the receiver) is a tree node reached from a root or alias:
 
 1. **Copy-in:** if the value is an object at runtime (primitives skip all of
    this), deep-copy it using the §5.3 copy rules, put the copy into the tree at
-   that path, and mark that subtree as *owned*. Later writes to it in the block
+   that path, and mark that subtree as _owned_. Later writes to it in the block
    mutate it directly.
 2. The call runs with the copy, which it may mutate freely. Values it returns
    that point into the copy stay valid.

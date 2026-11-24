@@ -7,7 +7,8 @@ import type * as Options from "../options.ts";
 import * as Aliases from "./aliases.ts";
 import * as Ast from "./ast.ts";
 import * as Calls from "./calls.ts";
-import { CONTEXT, type Alias, type Edit, type InlineVariables, type Part } from "./codegen.ts";
+import type { Alias, Edit, InlineVariables, Part } from "./codegen.ts";
+import { CONTEXT } from "./codegen.ts";
 import type { Warning } from "./errors.ts";
 import type * as State from "./state.ts";
 import * as Writes from "./writes.ts";
@@ -95,8 +96,13 @@ function createContext(input: Input): Context {
     callbacksWithStateParams: new WeakSet(),
     variables: {
       copyOf(path) {
-        if (!output.copyVariables.has(path)) output.copyVariables.set(path, `${CONTEXT}_${output.copyVariables.size}`);
-        return output.copyVariables.get(path)!;
+        const existing = output.copyVariables.get(path);
+        if (existing) {
+          return existing;
+        }
+        const variable = `${CONTEXT}_${output.copyVariables.size}`;
+        output.copyVariables.set(path, variable);
+        return variable;
       },
       nextKey: () => `${CONTEXT}_k${++counter}`,
       nextIndex: () => `${CONTEXT}_i${++counter}`,
@@ -104,7 +110,11 @@ function createContext(input: Input): Context {
     output,
     emit: (node, parts) => output.edits.push({ start: node.start, end: node.end, parts }),
     emitRange: (start, end, parts) => output.edits.push({ start, end, parts }),
-    markReplaced: (nodes) => nodes.forEach((node) => replaced.add(node)),
+    markReplaced: (nodes) => {
+      for (const node of nodes) {
+        replaced.add(node);
+      }
+    },
     sourceOf: (node) => input.code.slice(node.start, node.end),
   };
 }
@@ -112,34 +122,48 @@ function createContext(input: Input): Context {
 function compileCall(context: Context, call: Ast.Node, parent: Ast.Node, depth: number): void {
   const method = Ast.methodName(call);
   const mayMutateReceiver = method === null || (method !== undefined && Calls.isMutating(method));
-  if (mayMutateReceiver) Writes.mutatingCall(context, call, method, depth, parent);
-  else if (!Aliases.registerCallback(context, call, method, depth)) Writes.opaqueCall(context, call, depth);
+  if (mayMutateReceiver) {
+    Writes.mutatingCall(context, call, method, depth, parent);
+  } else if (!Aliases.registerCallback(context, call, method, depth)) {
+    Writes.opaqueCall(context, call, depth);
+  }
   Aliases.markCallbackParams(context, call);
 }
 
 function compileNode(context: Context, node: Ast.Node, parent: Ast.Node, depth: number): void {
   switch (node.type) {
     case "Identifier":
-      return Aliases.read(context, node);
+      Aliases.read(context, node);
+      return;
     case "Property":
-      return Aliases.shorthandRead(context, node);
+      Aliases.shorthandRead(context, node);
+      return;
     case "BreakStatement":
-      if (node.label?.name === "mut") context.output.breaksOut = true;
+      if (node.label?.name === "mut") {
+        context.output.breaksOut = true;
+      }
       return;
     case "AssignmentExpression":
-      return Writes.assignment(context, node, parent, depth);
+      Writes.assignment(context, node, parent, depth);
+      return;
     case "UpdateExpression":
-      return Writes.update(context, node, parent, depth);
+      Writes.update(context, node, parent, depth);
+      return;
     case "UnaryExpression":
-      return Writes.remove(context, node, parent, depth);
+      Writes.remove(context, node, parent, depth);
+      return;
     case "CallExpression":
-      return compileCall(context, node, parent, depth);
+      compileCall(context, node, parent, depth);
+      return;
     case "NewExpression":
-      return Writes.opaqueCall(context, node, depth);
+      Writes.opaqueCall(context, node, depth);
+      return;
     case "VariableDeclarator":
-      return Aliases.declarator(context, node, depth);
+      Aliases.declarator(context, node, depth);
+      return;
     case "ForOfStatement":
-      return Aliases.forOf(context, node, depth);
+      Aliases.forOf(context, node, depth);
+      return;
   }
 }
 
@@ -149,16 +173,26 @@ function compileNode(context: Context, node: Ast.Node, parent: Ast.Node, depth: 
  * after the block ends.
  */
 function visit(context: Context, node: Ast.Node, parent: Ast.Node, depth: number): void {
-  if (Ast.isTypeOnly(node)) return;
+  if (Ast.isTypeOnly(node)) {
+    return;
+  }
   const bindings = Ast.scopeBindings(node);
   if (bindings) {
     context.scopes.push({ bindings, aliases: new Map(), maybeState: new Map() });
-    if (Ast.isFunction(node)) Aliases.bindParams(context, node);
+    if (Ast.isFunction(node)) {
+      Aliases.bindParams(context, node);
+    }
   }
   const innerDepth = Ast.isFunction(node) && !context.iterationCallbacks.has(node) ? depth + 1 : depth;
-  if (!context.replaced.has(node)) compileNode(context, node, parent, innerDepth);
-  for (const child of Ast.references(node)) visit(context, child, node, innerDepth);
-  if (bindings) context.scopes.pop();
+  if (!context.replaced.has(node)) {
+    compileNode(context, node, parent, innerDepth);
+  }
+  for (const child of Ast.references(node)) {
+    visit(context, child, node, innerDepth);
+  }
+  if (bindings) {
+    context.scopes.pop();
+  }
 }
 
 /** Analyses the body of the `mut:` statement `label`. Throws `PromoteToAlias` when a local must become an alias. */

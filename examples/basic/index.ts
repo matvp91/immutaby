@@ -27,4 +27,10 @@ export function toggle(state: State, index: number): State {
 const initial: State = { user: { name: "Ada" }, todos: [] };
 const one = addTodo(initial, "write the plugin");
 const two = toggle(one, 0);
-console.log(JSON.stringify(two), "user shared:", two.user === initial.user, "base untouched:", initial.todos.length === 0);
+console.log(
+  JSON.stringify(two),
+  "user shared:",
+  two.user === initial.user,
+  "base untouched:",
+  initial.todos.length === 0,
+);
