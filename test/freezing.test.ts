@@ -55,6 +55,6 @@ it("can be turned off", () => {
     "freeze",
   );
   expect(transform(source, "a.ts", { freeze: "always" })?.code).toContain(
-    "__imm.Draft.freeze(s)",
+    "__imm_freeze(s)",
   );
 });

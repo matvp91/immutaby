@@ -93,9 +93,9 @@ Statement-level writes become inline copies. Each node is copied once per block,
 // s.user.name = "Ada"; (generated variable names simplified)
 {
   const v = "Ada";
-  if (!__imm.Path.isUnchanged(s.user, "name", v)) {
-    if (s !== c0) s = c0 = __imm.Draft.shallowCopy(s);
-    if (s.user !== c1) s.user = c1 = __imm.Draft.shallowCopy(s.user);
+  if (!__imm_isUnchanged(s.user, "name", v)) {
+    if (s !== c0) s = c0 = __imm_shallowCopy(s);
+    if (s.user !== c1) s.user = c1 = __imm_shallowCopy(s.user);
     s.user.name = v;
   }
 }

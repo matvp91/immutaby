@@ -1,11 +1,29 @@
 import type * as Ast from "./ast.ts";
 
 // The only module that knows the shape of generated code: the runtime's
-// namespace and helpers, and the names of generated variables. Every function
-// is pure except the allocator `createNames` returns.
+// helpers and the names of generated variables. Every function is pure except
+// the allocator `createNames` returns.
 
-// Namespace the runtime is imported as.
-const RUNTIME = "__imm";
+// The helpers exported by the runtime (runtime/index.ts), all named with a
+// `__imm_` prefix and always emitted as calls.
+const RUNTIME_HELPERS = [
+  "__imm_assertArray",
+  "__imm_callMethod",
+  "__imm_createContext",
+  "__imm_elements",
+  "__imm_findIndexKey",
+  "__imm_freeze",
+  "__imm_increment",
+  "__imm_isUnchanged",
+  "__imm_iterate",
+  "__imm_lend",
+  "__imm_read",
+  "__imm_remove",
+  "__imm_resolve",
+  "__imm_restoreSharing",
+  "__imm_shallowCopy",
+  "__imm_write",
+];
 
 // Name of a block's runtime context, and prefix for the block's other
 // generated variables.
@@ -127,7 +145,7 @@ export function createNames(): Names {
  * the predicate in `args` (`s.todos.find(p)`).
  */
 export const findKey = (method: string, args: Part[]): PathKey => [
-  `${RUNTIME}.Path.findIndexKey(${JSON.stringify(method)}, `,
+  `__imm_findIndexKey(${JSON.stringify(method)}, `,
   ...joinArguments(args),
   ")",
 ];
@@ -142,7 +160,7 @@ export function pathHolder(
   hasFindKey: boolean,
 ): Part[] {
   return hasFindKey
-    ? [`${RUNTIME}.Path.resolve(`, ...keyArray(keys), `, ${root})`]
+    ? [`__imm_resolve(`, ...keyArray(keys), `, ${root})`]
     : keyArray(keys);
 }
 
@@ -151,7 +169,7 @@ export function pathHolder(
  * array.
  */
 export function indexLoopHeader(item: string, list: string): string {
-  const start = `(${RUNTIME}.Path.assertArray(${list}), 0)`;
+  const start = `(__imm_assertArray(${list}), 0)`;
   return `for (let ${item} = ${start}; ${item} < ${list}.length; ${item}++) `;
 }
 
@@ -160,7 +178,7 @@ export function indexLoopHeader(item: string, list: string): string {
  * `for...of` over a path that isn't plain.
  */
 export const elementsCall = (root: string, keys: PathKey[]): Part[] => [
-  `${RUNTIME}.Path.elements(() => ${root}, `,
+  `__imm_elements(() => ${root}, `,
   ...keyArray(keys),
   ")",
 ];
@@ -185,7 +203,7 @@ export const iterateCall = (
   method: string,
   args: Part[],
 ): Part[] => [
-  `${RUNTIME}.Path.iterate(`,
+  `__imm_iterate(`,
   ...keyArray(keys),
   `, ${JSON.stringify(method)}, [`,
   ...joinArguments(args),
@@ -197,7 +215,7 @@ export const iterateCall = (
  * root is rebound and the copy is the expression's value.
  */
 export const lendCall = (root: string, keys: PathKey[]): Part[] => [
-  `(${root} = ${RUNTIME}.Lending.lend(${CONTEXT}, `,
+  `(${root} = __imm_lend(${CONTEXT}, `,
   ...keyArray(keys),
   `, ${root}), ${CONTEXT}.result)`,
 ];
@@ -217,23 +235,23 @@ function helperCall(root: string, keys: PathKey[], write: HelperWrite): Part[] {
   const path = keyArray(keys);
   switch (write.kind) {
     case "set":
-      return [`Path.write(${CONTEXT}, `, ...path, ", ", write.value];
+      return [`__imm_write(${CONTEXT}, `, ...path, ", ", write.value];
     case "compound":
       return [
-        `Path.write(${CONTEXT}, ${CONTEXT}.compoundPath = `,
+        `__imm_write(${CONTEXT}, ${CONTEXT}.compoundPath = `,
         ...path,
-        `, ${RUNTIME}.Path.read(${root}, ${CONTEXT}.compoundPath) `,
+        `, __imm_read(${root}, ${CONTEXT}.compoundPath) `,
         `${write.operator} (`,
         write.value,
         ")",
       ];
     case "increment":
-      return [`Path.increment(${CONTEXT}, `, ...path, `, ${write.delta}`];
+      return [`__imm_increment(${CONTEXT}, `, ...path, `, ${write.delta}`];
     case "remove":
-      return [`Path.remove(${CONTEXT}, `, ...path];
+      return [`__imm_remove(${CONTEXT}, `, ...path];
     case "callMethod":
       return [
-        `Path.callMethod(${CONTEXT}, `,
+        `__imm_callMethod(${CONTEXT}, `,
         ...path,
         ", ",
         write.method,
@@ -257,11 +275,7 @@ export function helperWrite(
   write: HelperWrite,
   asExpression: boolean,
 ): Part[] {
-  const code = [
-    `${root} = ${RUNTIME}.`,
-    ...helperCall(root, keys, write),
-    `, ${root})`,
-  ];
+  const code = [`${root} = `, ...helperCall(root, keys, write), `, ${root})`];
   if (!asExpression) {
     return code;
   }
@@ -282,9 +296,9 @@ export type InlineWrite =
  *
  *   {
  *     const v' = v;
- *     if (!Path.isUnchanged(s.user, "name", v')) {
- *       if (s !== c0) s = c0 = Draft.shallowCopy(s);
- *       if (s.user !== c1) s.user = c1 = Draft.shallowCopy(s.user);
+ *     if (!__imm_isUnchanged(s.user, "name", v')) {
+ *       if (s !== c0) s = c0 = __imm_shallowCopy(s);
+ *       if (s.user !== c1) s.user = c1 = __imm_shallowCopy(s.user);
  *       s.user.name = v';
  *     }
  *   }
@@ -341,7 +355,7 @@ export function inlineWrite(
   const copies = nodes
     .map((node, i) => {
       const copy = names.copyOf(paths[i]);
-      const shallowCopy = `${RUNTIME}.Draft.shallowCopy(${node})`;
+      const shallowCopy = `__imm_shallowCopy(${node})`;
       return `if (${node} !== ${copy}) ${node} = ${copy} = ${shallowCopy}; `;
     })
     .join("");
@@ -349,7 +363,7 @@ export function inlineWrite(
     code.push(`if (${lastKey} in ${parent}) { ${copies}delete ${target}; } }`);
   } else {
     const args = `${parent}, ${lastKey}, ${value}`;
-    const isUnchanged = `${RUNTIME}.Path.isUnchanged(${args})`;
+    const isUnchanged = `__imm_isUnchanged(${args})`;
     code.push(`if (!${isUnchanged}) { ${copies}${target} = ${value}; } }`);
   }
   return code;
@@ -385,7 +399,7 @@ export function blockWrapper({
 } {
   const open: string[] = [];
   if (usesContext) {
-    open.push(`const ${CONTEXT} = ${RUNTIME}.Draft.createContext();`);
+    open.push(`const ${CONTEXT} = __imm_createContext();`);
   }
   if (copyVariables.length) {
     open.push(`let ${copyVariables.join(", ")};`);
@@ -404,16 +418,24 @@ export function blockWrapper({
   const atEnd = [
     ...lentRoots.map((root) => {
       const args = `${CONTEXT}, ${root}, ${base(root)}`;
-      const restored = `${RUNTIME}.Lending.restoreSharing(${args})`;
+      const restored = `__imm_restoreSharing(${args})`;
       return `${root} = ${restored};`;
     }),
-    ...frozenRoots.map((root) => `${RUNTIME}.Draft.freeze(${root});`),
+    ...frozenRoots.map((root) => `__imm_freeze(${root});`),
   ];
   return { open: open.join(" "), close: ` } finally { ${atEnd.join(" ")} }` };
 }
 
 /**
- * The import of the runtime namespace, prepended to compiled modules.
+ * The import of the runtime helpers that compiled `code` calls, prepended to
+ * the module.
  */
-export const runtimeImport = (specifier: string): string =>
-  `import * as ${RUNTIME} from ${JSON.stringify(specifier)};\n`;
+export function runtimeImport(specifier: string, code: string): string {
+  const used = RUNTIME_HELPERS.filter((name) =>
+    new RegExp(`\\b${name}\\(`).test(code),
+  );
+  if (!used.length) {
+    return "";
+  }
+  return `import { ${used.join(", ")} } from ${JSON.stringify(specifier)};\n`;
+}

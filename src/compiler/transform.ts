@@ -59,7 +59,7 @@ export function transform(
     return null;
   }
 
-  magic.prepend(Codegen.runtimeImport(options.runtime));
+  magic.prepend(Codegen.runtimeImport(options.runtime, magic.toString()));
   return {
     code: magic.toString(),
     map: magic.generateMap({ hires: true, source: id, includeContent: true }),
