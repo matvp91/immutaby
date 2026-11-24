@@ -15,7 +15,10 @@ export function read(context: Block.Context, identifier: Ast.Node): void {
 }
 
 /** `{ user }` with `user` an alias becomes `{ user: s.user }`. */
-export function shorthandRead(context: Block.Context, property: Ast.Node): void {
+export function shorthandRead(
+  context: Block.Context,
+  property: Ast.Node,
+): void {
   if (!property.shorthand || property.value.type !== "Identifier") {
     return;
   }
@@ -24,18 +27,31 @@ export function shorthandRead(context: Block.Context, property: Ast.Node): void 
     return;
   }
   context.markReplaced([property.value]);
-  context.emit(property, [`${property.value.name}: ${Codegen.aliasRead(binding.alias)}`]);
+  context.emit(property, [
+    `${property.value.name}: ${Codegen.aliasRead(binding.alias)}`,
+  ]);
 }
 
-/** `const user = s.user`: an alias if written through; otherwise a plain local that may point into state. */
-export function declarator(context: Block.Context, node: Ast.Node, depth: number): void {
+/**
+ * `const user = s.user`: an alias if written through; otherwise a plain local
+ * that may point into state.
+ */
+export function declarator(
+  context: Block.Context,
+  node: Ast.Node,
+  depth: number,
+): void {
   if (!node.init) {
     return;
   }
   const binding = node.id.type === "Identifier" ? node.id : null;
-  const path = binding ? State.pathOf(context, node.init, { depth, forWrite: false }) : null;
+  const path = binding
+    ? State.pathOf(context, node.init, { depth, forWrite: false })
+    : null;
   if (!path) {
-    const promotable = binding ? State.promotableBase(context, node.init) : null;
+    const promotable = binding
+      ? State.promotableBase(context, node.init)
+      : null;
     if (State.touches(context, node.init)) {
       for (const name of Ast.bindingNames(node.id)) {
         State.markMaybeState(context, name, promotable);
@@ -53,19 +69,37 @@ export function declarator(context: Block.Context, node: Ast.Node, depth: number
   if (!needsHolder) {
     return;
   }
-  // Hold the path, with its computed keys captured now (and `find` resolved once).
+  // Hold the path, with its computed keys captured now (and `find` resolved
+  // once).
   context.markReplaced(path.replaces);
   const keys = ["[", ...Codegen.joinKeys(path.keys), "]"];
-  context.emit(node.init, path.hasFindKey ? [`${RUNTIME}.Path.resolve(`, ...keys, `, ${path.root})`] : keys);
+  context.emit(
+    node.init,
+    path.hasFindKey
+      ? [`${RUNTIME}.Path.resolve(`, ...keys, `, ${path.root})`]
+      : keys,
+  );
 }
 
-/** `for (const item of s.todos)`: written through, it becomes an index loop with `item` read as `s.todos[item]`. */
-export function forOf(context: Block.Context, loop: Ast.Node, depth: number): void {
-  const declaration = loop.left.type === "VariableDeclaration" ? loop.left.declarations[0] : null;
+/**
+ * `for (const item of s.todos)`: written through, it becomes an index loop with
+ * `item` read as `s.todos[item]`.
+ */
+export function forOf(
+  context: Block.Context,
+  loop: Ast.Node,
+  depth: number,
+): void {
+  const declaration =
+    loop.left.type === "VariableDeclaration" ? loop.left.declarations[0] : null;
   const binding = declaration?.id.type === "Identifier" ? declaration.id : null;
-  const path = binding ? State.pathOf(context, loop.right, { depth, forWrite: false }) : null;
+  const path = binding
+    ? State.pathOf(context, loop.right, { depth, forWrite: false })
+    : null;
   if (!path) {
-    const promotable = binding ? State.promotableBase(context, loop.right) : null;
+    const promotable = binding
+      ? State.promotableBase(context, loop.right)
+      : null;
     const pattern = declaration ? declaration.id : loop.left;
     if (State.touches(context, loop.right)) {
       for (const name of Ast.bindingNames(pattern)) {
@@ -83,10 +117,16 @@ export function forOf(context: Block.Context, loop: Ast.Node, depth: number): vo
   if (path.keys.every(isPlainKey) && !loop.await) {
     const keys = path.keys.map(([key]) => key as string);
     const list = Codegen.aliasRead({ root: path.root, keys });
-    State.declareAlias(context, binding, { root: path.root, keys: [...keys, item] }, path.replaces);
-    context.emitRange(loop.start, loop.body.start, [
-      `for (let ${item} = (${RUNTIME}.Path.assertArray(${list}), 0); ${item} < ${list}.length; ${item}++) `,
-    ]);
+    State.declareAlias(
+      context,
+      binding,
+      { root: path.root, keys: [...keys, item] },
+      path.replaces,
+    );
+    const start = `(${RUNTIME}.Path.assertArray(${list}), 0)`;
+    const condition = `${item} < ${list}.length`;
+    const header = `for (let ${item} = ${start}; ${condition}; ${item}++) `;
+    context.emitRange(loop.start, loop.body.start, [header]);
     return;
   }
   const { alias } = State.aliasFor(path, item);
@@ -96,12 +136,16 @@ export function forOf(context: Block.Context, loop: Ast.Node, depth: number): vo
     { root: alias.root, keys: [...alias.keys, `${item}[${path.keys.length}]`] },
     path.replaces,
   );
-  context.emit(loop.right, [`${RUNTIME}.Path.elements(() => ${path.root}, [`, ...Codegen.joinKeys(path.keys), "])"]);
+  context.emit(loop.right, [
+    `${RUNTIME}.Path.elements(() => ${path.root}, [`,
+    ...Codegen.joinKeys(path.keys),
+    "])",
+  ]);
 }
 
-// On a plain path the call stays as is and the element is read by index (`s.todos[i]`, adding
-// the index parameter if needed); otherwise the call goes through `Path.iterate`, which passes
-// element paths.
+// On a plain path the call stays as is and the element is read by index
+// (`s.todos[i]`, adding the index parameter if needed); otherwise the call goes
+// through `Path.iterate`, which passes element paths.
 function elementAlias(
   context: Block.Context,
   call: Ast.Node,
@@ -112,14 +156,28 @@ function elementAlias(
 ): Alias {
   const element = callback.params[elementIndex];
   const index = callback.params[elementIndex + 1];
-  if (receiver.keys.every(isPlainKey) && element.type === "Identifier" && (!index || index.type === "Identifier")) {
+  if (
+    receiver.keys.every(isPlainKey) &&
+    element.type === "Identifier" &&
+    (!index || index.type === "Identifier")
+  ) {
     let indexName = index?.name;
     if (!indexName) {
       indexName = context.variables.nextIndex();
-      const hasParens = /[(,]$/.test(context.code.slice(callback.start, element.start).trimEnd());
-      context.emit(element, [hasParens ? "" : "(", element, `, ${indexName}`, hasParens ? "" : ")"]);
+      const hasParens = /[(,]$/.test(
+        context.code.slice(callback.start, element.start).trimEnd(),
+      );
+      context.emit(element, [
+        hasParens ? "" : "(",
+        element,
+        `, ${indexName}`,
+        hasParens ? "" : ")",
+      ]);
     }
-    return { root: receiver.root, keys: [...receiver.keys.map(([key]) => key as string), indexName] };
+    return {
+      root: receiver.root,
+      keys: [...receiver.keys.map(([key]) => key as string), indexName],
+    };
   }
   context.markReplaced(receiver.replaces);
   const methodName = JSON.stringify(method);
@@ -132,7 +190,10 @@ function elementAlias(
     `], ${receiver.root})`,
   ]);
   const { alias } = State.aliasFor(receiver, element.name);
-  return { root: alias.root, keys: [...alias.keys, `${element.name}[${receiver.keys.length}]`] };
+  return {
+    root: alias.root,
+    keys: [...alias.keys, `${element.name}[${receiver.keys.length}]`],
+  };
 }
 
 /**
@@ -154,10 +215,20 @@ export function registerCallback(
 
   const path = State.pathOf(context, receiver, { depth, forWrite: false });
   if (path) {
-    const registered: Block.IterationCallback = { receiver: path, elementIndex };
+    const registered: Block.IterationCallback = {
+      receiver: path,
+      elementIndex,
+    };
     context.iterationCallbacks.set(callback, registered);
     if (context.promoted.has(callback.params[elementIndex])) {
-      registered.elementAlias = elementAlias(context, call, callback, path, method, elementIndex);
+      registered.elementAlias = elementAlias(
+        context,
+        call,
+        callback,
+        path,
+        method,
+        elementIndex,
+      );
     }
     return true;
   }
@@ -166,27 +237,41 @@ export function registerCallback(
   if (!promotable) {
     return false;
   }
-  context.callbacksPromotingReceiver.set(callback, { binding: promotable, elementIndex });
+  context.callbacksPromotingReceiver.set(callback, {
+    binding: promotable,
+    elementIndex,
+  });
   return true;
 }
 
-/** Marks the parameters of other functions passed to calls that touch state as maybe pointing into state. */
-export function markCallbackParams(context: Block.Context, call: Ast.Node): void {
+/**
+ * Marks the parameters of other functions passed to calls that touch state as
+ * maybe pointing into state.
+ */
+export function markCallbackParams(
+  context: Block.Context,
+  call: Ast.Node,
+): void {
   const touchesState =
     State.touches(context, call.callee) ||
-    call.arguments.some((argument: Ast.Node) => State.touches(context, argument));
+    call.arguments.some((argument: Ast.Node) =>
+      State.touches(context, argument),
+    );
   if (!touchesState) {
     return;
   }
   for (const argument of call.arguments) {
-    const isRegistered = context.iterationCallbacks.has(argument) || context.callbacksPromotingReceiver.has(argument);
+    const isRegistered =
+      context.iterationCallbacks.has(argument) ||
+      context.callbacksPromotingReceiver.has(argument);
     if (Ast.isFunction(argument) && !isRegistered) {
       context.callbacksWithStateParams.add(argument);
     }
   }
 }
 
-// The element goes to `onElement`, the index is left alone, and any other parameter may be state.
+// The element goes to `onElement`, the index is left alone, and any other
+// parameter may be state.
 function bindIterationParams(
   context: Block.Context,
   callback: Ast.Node,
@@ -204,7 +289,10 @@ function bindIterationParams(
   });
 }
 
-/** Binds a function's parameters as its scope is entered (the scope must already be pushed). */
+/**
+ * Binds a function's parameters as its scope is entered (the scope must already
+ * be pushed).
+ */
 export function bindParams(context: Block.Context, fn: Ast.Node): void {
   if (context.callbacksWithStateParams.has(fn)) {
     for (const param of fn.params) {
@@ -216,8 +304,12 @@ export function bindParams(context: Block.Context, fn: Ast.Node): void {
 
   const promotingReceiver = context.callbacksPromotingReceiver.get(fn);
   if (promotingReceiver) {
-    bindIterationParams(context, fn, promotingReceiver.elementIndex, (element) =>
-      State.markMaybeState(context, element.name, promotingReceiver.binding),
+    bindIterationParams(
+      context,
+      fn,
+      promotingReceiver.elementIndex,
+      (element) =>
+        State.markMaybeState(context, element.name, promotingReceiver.binding),
     );
   }
 

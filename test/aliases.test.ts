@@ -152,7 +152,12 @@ it("falls back to runtime paths when keys aren't static", () => {
 });
 
 it("nested aliases inside callbacks and loops", () => {
-  let s = freeze({ groups: [{ todos: [{ done: false }, { done: false }] }, { todos: [{ done: true }] }] });
+  let s = freeze({
+    groups: [
+      { todos: [{ done: false }, { done: false }] },
+      { todos: [{ done: true }] },
+    ],
+  });
   mut: {
     for (const group of s.groups) {
       group.todos.forEach((todo) => {
@@ -160,7 +165,10 @@ it("nested aliases inside callbacks and loops", () => {
       });
     }
   }
-  expect(s.groups.map((g) => g.todos.map((t) => t.done))).toEqual([[true, true], [false]]);
+  expect(s.groups.map((g) => g.todos.map((t) => t.done))).toEqual([
+    [true, true],
+    [false],
+  ]);
 });
 
 it("for...of over a non-array state value throws", () => {

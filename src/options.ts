@@ -1,5 +1,8 @@
 export interface Input {
-  /** Module the generated code imports helpers from (default "immutaby/runtime"). */
+  /**
+   * Module the generated code imports helpers from (default
+   * "immutaby/runtime").
+   */
   runtime?: string;
   /**
    * What to do at calls that may change state the compiler can't see into
@@ -7,7 +10,10 @@ export interface Input {
    * default each one is reported.
    */
   opaqueCalls?: "warn" | "error" | "allow";
-  /** Functions known not to change their arguments, e.g. `["format", "log.debug"]`. */
+  /**
+   * Functions known not to change their arguments, e.g. `["format",
+   * "log.debug"]`.
+   */
   readonlyCalls?: string[];
   /**
    * Deep-freeze state written in a block when it ends, so mutation outside
@@ -32,13 +38,17 @@ export interface Resolved {
 }
 
 /** Fills in defaults. `nodeEnv` decides whether `freeze: "dev"` freezes. */
-export function resolve(input: Input = {}, nodeEnv = process.env.NODE_ENV): Resolved {
+export function resolve(
+  input: Input = {},
+  nodeEnv = process.env.NODE_ENV,
+): Resolved {
   const freeze = input.freeze ?? "dev";
   return {
     runtime: input.runtime ?? "immutaby/runtime",
     opaqueCalls: input.opaqueCalls ?? "warn",
     readonlyCalls: input.readonlyCalls ?? [],
-    freeze: freeze === "always" || (freeze === "dev" && nodeEnv !== "production"),
+    freeze:
+      freeze === "always" || (freeze === "dev" && nodeEnv !== "production"),
     inline: input.inline ?? true,
   };
 }

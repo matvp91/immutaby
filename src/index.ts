@@ -10,7 +10,9 @@ export { immerable } from "./runtime/draft.ts";
 
 const SCRIPT_MODULE = /\.[cm]?[jt]sx?(?:$|\?)/;
 
-/** Rolldown plugin: compiles `mut: { ... }` blocks into copy-on-write updates. */
+/**
+ * Rolldown plugin: compiles `mut: { ... }` blocks into copy-on-write updates.
+ */
 export default function immutaby(options: Options.Input = {}): Plugin {
   return {
     name: "immutaby",

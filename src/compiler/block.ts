@@ -13,11 +13,17 @@ export interface Scope {
   bindings: ReadonlyMap<string, Ast.BindingKind>;
   /** Locals compiled to state locations. */
   aliases: Map<string, Alias>;
-  /** Locals that may point into state, with their binding node when they can become an alias (else null). */
+  /**
+   * Locals that may point into state, with their binding node when they can
+   * become an alias (else null).
+   */
   maybeState: Map<string, Ast.Node | null>;
 }
 
-/** An inline callback of an iteration method on state: it runs synchronously, and its element may be an alias. */
+/**
+ * An inline callback of an iteration method on state: it runs synchronously,
+ * and its element may be an alias.
+ */
 export interface IterationCallback {
   receiver: State.Path;
   elementIndex: number;
@@ -46,22 +52,37 @@ export interface Input {
   inline: boolean;
   /** The ancestors of the `mut:` label, where roots are declared. */
   enclosing: readonly Ast.Node[];
-  /** Bindings that earlier passes found written through: they are compiled as aliases. */
+  /**
+   * Bindings that earlier passes found written through: they are compiled as
+   * aliases.
+   */
   promoted: WeakSet<Ast.Node>;
 }
 
 /**
- * The state of one analysis pass over a block, created per pass and passed explicitly to the
- * `Writes`, `Aliases` and `State` functions.
+ * The state of one analysis pass over a block, created per pass and passed
+ * explicitly to the `Writes`, `Aliases` and `State` functions.
  */
 export interface Context extends Readonly<Input> {
   readonly scopes: Scope[];
-  /** Nodes whose source an enclosing edit replaces; they must not get edits of their own. */
+  /**
+   * Nodes whose source an enclosing edit replaces; they must not get edits of
+   * their own.
+   */
   readonly replaced: WeakSet<Ast.Node>;
   readonly iterationCallbacks: WeakMap<Ast.Node, IterationCallback>;
-  /** Iteration callbacks on a local that isn't an alias yet: writing through the element promotes that local first. */
-  readonly callbacksPromotingReceiver: WeakMap<Ast.Node, { binding: Ast.Node; elementIndex: number }>;
-  /** Other functions passed to calls that touch state: their parameters may point into state. */
+  /**
+   * Iteration callbacks on a local that isn't an alias yet: writing through the
+   * element promotes that local first.
+   */
+  readonly callbacksPromotingReceiver: WeakMap<
+    Ast.Node,
+    { binding: Ast.Node; elementIndex: number }
+  >;
+  /**
+   * Other functions passed to calls that touch state: their parameters may
+   * point into state.
+   */
   readonly callbacksWithStateParams: WeakSet<Ast.Node>;
   readonly variables: InlineVariables & { nextIndex(): string };
   readonly output: Output;
@@ -107,7 +128,8 @@ function createContext(input: Input): Context {
       nextIndex: () => `${CONTEXT}_i${++counter}`,
     },
     output,
-    emit: (node, parts) => output.edits.push({ start: node.start, end: node.end, parts }),
+    emit: (node, parts) =>
+      output.edits.push({ start: node.start, end: node.end, parts }),
     emitRange: (start, end, parts) => output.edits.push({ start, end, parts }),
     markReplaced: (nodes) => {
       for (const node of nodes) {
@@ -118,9 +140,15 @@ function createContext(input: Input): Context {
   };
 }
 
-function compileCall(context: Context, call: Ast.Node, parent: Ast.Node, depth: number): void {
+function compileCall(
+  context: Context,
+  call: Ast.Node,
+  parent: Ast.Node,
+  depth: number,
+): void {
   const method = Ast.methodName(call);
-  const mayMutateReceiver = method === null || (method !== undefined && Calls.isMutating(method));
+  const mayMutateReceiver =
+    method === null || (method !== undefined && Calls.isMutating(method));
   if (mayMutateReceiver) {
     Writes.mutatingCall(context, call, method, depth, parent);
   } else if (!Aliases.registerCallback(context, call, method, depth)) {
@@ -129,7 +157,12 @@ function compileCall(context: Context, call: Ast.Node, parent: Ast.Node, depth: 
   Aliases.markCallbackParams(context, call);
 }
 
-function compileNode(context: Context, node: Ast.Node, parent: Ast.Node, depth: number): void {
+function compileNode(
+  context: Context,
+  node: Ast.Node,
+  parent: Ast.Node,
+  depth: number,
+): void {
   switch (node.type) {
     case "Identifier":
       Aliases.read(context, node);
@@ -166,20 +199,33 @@ function compileNode(context: Context, node: Ast.Node, parent: Ast.Node, depth: 
   }
 }
 
-// `depth` counts the functions between the block and `node`, other than inline iteration
-// callbacks (which run synchronously): writes inside them would happen after the block ends.
-function visit(context: Context, node: Ast.Node, parent: Ast.Node, depth: number): void {
+// `depth` counts the functions between the block and `node`, other than inline
+// iteration callbacks (which run synchronously): writes inside them would
+// happen after the block ends.
+function visit(
+  context: Context,
+  node: Ast.Node,
+  parent: Ast.Node,
+  depth: number,
+): void {
   if (Ast.isTypeOnly(node)) {
     return;
   }
   const bindings = Ast.scopeBindings(node);
   if (bindings) {
-    context.scopes.push({ bindings, aliases: new Map(), maybeState: new Map() });
+    context.scopes.push({
+      bindings,
+      aliases: new Map(),
+      maybeState: new Map(),
+    });
     if (Ast.isFunction(node)) {
       Aliases.bindParams(context, node);
     }
   }
-  const innerDepth = Ast.isFunction(node) && !context.iterationCallbacks.has(node) ? depth + 1 : depth;
+  const innerDepth =
+    Ast.isFunction(node) && !context.iterationCallbacks.has(node)
+      ? depth + 1
+      : depth;
   if (!context.replaced.has(node)) {
     compileNode(context, node, parent, innerDepth);
   }
@@ -191,7 +237,10 @@ function visit(context: Context, node: Ast.Node, parent: Ast.Node, depth: number
   }
 }
 
-/** Analyses the body of the `mut:` statement `label`. Throws `PromoteToAlias` when a local must become an alias. */
+/**
+ * Analyses the body of the `mut:` statement `label`. Throws `PromoteToAlias`
+ * when a local must become an alias.
+ */
 export function analyse(label: Ast.Node, input: Input): Output {
   const context = createContext(input);
   visit(context, label.body, label, 0);

@@ -13,14 +13,25 @@ const rename = (user: State["user"]) => {
   user.name = "Grace";
 };
 
-/** Results are stored here so neither the bundler nor the JIT can drop the work. */
+/**
+ * Results are stored here so neither the bundler nor the JIT can drop the work.
+ */
 let sink: unknown;
 
-const suites: Record<string, Record<"spread" | "immutaby" | "immer", () => void>> = {
+const suites: Record<
+  string,
+  Record<"spread" | "immutaby" | "immer", () => void>
+> = {
   "nested write": {
     spread: () => {
       const s = small;
-      sink = { ...s, user: { ...s.user, profile: { ...s.user.profile, visits: s.user.profile.visits + 1 } } };
+      sink = {
+        ...s,
+        user: {
+          ...s.user,
+          profile: { ...s.user.profile, visits: s.user.profile.visits + 1 },
+        },
+      };
     },
     immutaby: () => {
       let s = small;
@@ -40,7 +51,11 @@ const suites: Record<string, Record<"spread" | "immutaby" | "immer", () => void>
       const s = small;
       sink = {
         ...s,
-        user: { ...s.user, name: "Grace", profile: { ...s.user.profile, email: "g@example.com", visits: 1 } },
+        user: {
+          ...s.user,
+          name: "Grace",
+          profile: { ...s.user.profile, email: "g@example.com", visits: 1 },
+        },
       };
     },
     immutaby: () => {
@@ -101,7 +116,12 @@ const suites: Record<string, Record<"spread" | "immutaby" | "immer", () => void>
   "find by id and update in 1000": {
     spread: () => {
       const s = large;
-      sink = { ...s, todos: s.todos.map((t) => (t.id === target ? { ...t, title: "found" } : t)) };
+      sink = {
+        ...s,
+        todos: s.todos.map((t) =>
+          t.id === target ? { ...t, title: "found" } : t,
+        ),
+      };
     },
     immutaby: () => {
       let s = large;
@@ -174,9 +194,15 @@ for (const [name, variants] of Object.entries(suites)) {
     return "throughput" in result ? result.throughput.mean : NaN;
   };
   const spread = opsPerSecond("spread");
-  const format = (variant: string) =>
-    `${(opsPerSecond(variant) / 1e6).toFixed(2)}M ops/s (${(spread / opsPerSecond(variant)).toFixed(1)}×)`;
-  rows[name] = { spread: `${(spread / 1e6).toFixed(2)}M ops/s`, immutaby: format("immutaby"), immer: format("immer") };
+  const format = (variant: string) => {
+    const ops = opsPerSecond(variant);
+    return `${(ops / 1e6).toFixed(2)}M ops/s (${(spread / ops).toFixed(1)}×)`;
+  };
+  rows[name] = {
+    spread: `${(spread / 1e6).toFixed(2)}M ops/s`,
+    immutaby: format("immutaby"),
+    immer: format("immer"),
+  };
 }
 console.table(rows);
 console.log("(× = times slower than hand-written spread)", typeof sink);

@@ -4,7 +4,10 @@ import type * as Path from "./path.ts";
 // biome-ignore lint/suspicious/noExplicitAny: see the comment above.
 export type StateNode = any;
 
-/** Classes marked with this symbol are copied like plain objects (the same symbol as immer's `immerable`). */
+/**
+ * Classes marked with this symbol are copied like plain objects (the same
+ * symbol as immer's `immerable`).
+ */
 export const immerable: unique symbol = Symbol.for("immer-draftable") as never;
 
 /** Whether `value` is a non-null object. */
@@ -12,18 +15,27 @@ export function isObject(value: unknown): value is object {
   return value !== null && typeof value === "object";
 }
 
-/** Plain objects, arrays, Map, Set, null-prototype objects and classes marked `immerable`. */
+/**
+ * Plain objects, arrays, Map, Set, null-prototype objects and classes marked
+ * `immerable`.
+ */
 export function isDraftable(value: object): boolean {
   if (Array.isArray(value) || value instanceof Map || value instanceof Set) {
     return true;
   }
   const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null || immerable in value || Boolean(proto.constructor?.[immerable]);
+  return (
+    proto === Object.prototype ||
+    proto === null ||
+    immerable in value ||
+    Boolean(proto.constructor?.[immerable])
+  );
 }
 
 /**
  * A shallow copy of a draftable value, keeping its prototype. Other values are
- * returned as is: they are shared, and writes go straight through (as in immer).
+ * returned as is: they are shared, and writes go straight through (as in
+ * immer).
  */
 export function shallowCopy(value: StateNode): StateNode {
   if (Array.isArray(value)) {
@@ -61,10 +73,18 @@ export interface Context {
 
 /** A fresh context for a block that uses helpers. */
 export function createContext(): Context {
-  return { copies: new Set(), result: undefined, previousValue: undefined, compoundPath: [] };
+  return {
+    copies: new Set(),
+    result: undefined,
+    previousValue: undefined,
+    compoundPath: [],
+  };
 }
 
-/** The block's copy of `value`, made at most once. Primitives and non-draftables pass through. */
+/**
+ * The block's copy of `value`, made at most once. Primitives and non-draftables
+ * pass through.
+ */
 export function owned(context: Context, value: StateNode): StateNode {
   if (!isObject(value) || context.copies.has(value)) {
     return value;
@@ -81,7 +101,12 @@ export function owned(context: Context, value: StateNode): StateNode {
  * must already be owned), linking each copy into its parent. Returns the owned
  * node at that depth. The path must already be resolved by `Path.read`.
  */
-export function ownAlong(context: Context, root: StateNode, path: Path.Keys, depth: number): StateNode {
+export function ownAlong(
+  context: Context,
+  root: StateNode,
+  path: Path.Keys,
+  depth: number,
+): StateNode {
   let node = root;
   for (let i = 0; i < depth; i++) {
     const key = path[i] as PropertyKey;
@@ -96,7 +121,11 @@ export function ownAlong(context: Context, root: StateNode, path: Path.Keys, dep
 }
 
 /** The block's copy of `value` and of everything draftable below it. */
-export function deepCopy(context: Context, value: StateNode, seen = new Map<object, StateNode>()): StateNode {
+export function deepCopy(
+  context: Context,
+  value: StateNode,
+  seen = new Map<object, StateNode>(),
+): StateNode {
   if (!isObject(value)) {
     return value;
   }
@@ -129,7 +158,9 @@ export function deepCopy(context: Context, value: StateNode, seen = new Map<obje
 }
 
 function throwFrozen(): never {
-  throw new TypeError("mut: this collection is frozen; change it inside a `mut:` block");
+  throw new TypeError(
+    "mut: this collection is frozen; change it inside a `mut:` block",
+  );
 }
 
 /**

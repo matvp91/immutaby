@@ -7,14 +7,33 @@ import { CONTEXT, RUNTIME } from "./codegen.ts";
 import { MutError, PromoteToAlias } from "./errors.ts";
 import * as State from "./state.ts";
 
-// Returns false when the write can't be inlined (not a statement, not a direct path, or inlining is off).
-function emitInline(context: Block.Context, statement: Ast.Node, path: State.Path, write: InlineWrite): boolean {
-  if (!context.inline || !path.isDirect || statement.type !== "ExpressionStatement") {
+// Returns false when the write can't be inlined (not a statement, not a direct
+// path, or inlining is off).
+function emitInline(
+  context: Block.Context,
+  statement: Ast.Node,
+  path: State.Path,
+  write: InlineWrite,
+): boolean {
+  if (
+    !context.inline ||
+    !path.isDirect ||
+    statement.type !== "ExpressionStatement"
+  ) {
     return false;
   }
   context.markReplaced(path.replaces);
   context.output.writtenRoots.add(path.root);
-  context.emit(statement, Codegen.inlineWrite(path.root, path.keys, write, context.sourceOf, context.variables));
+  context.emit(
+    statement,
+    Codegen.inlineWrite(
+      path.root,
+      path.keys,
+      write,
+      context.sourceOf,
+      context.variables,
+    ),
+  );
   return true;
 }
 
@@ -30,17 +49,31 @@ function emitHelper(
   context.output.writtenRoots.add(path.root);
   context.output.usesContext = true;
   const asExpression = parent.type !== "ExpressionStatement";
-  context.emit(write, Codegen.helperWrite(path.root, helperCall, asExpression, resultSlot));
+  context.emit(
+    write,
+    Codegen.helperWrite(path.root, helperCall, asExpression, resultSlot),
+  );
 }
 
-/** Compiles an assignment: a write to state, or a local that may now point into state. */
-export function assignment(context: Block.Context, node: Ast.Node, parent: Ast.Node, depth: number): void {
+/**
+ * Compiles an assignment: a write to state, or a local that may now point into
+ * state.
+ */
+export function assignment(
+  context: Block.Context,
+  node: Ast.Node,
+  parent: Ast.Node,
+  depth: number,
+): void {
   const target = Ast.unwrap(node.left);
 
   if (target.type === "Identifier") {
     const binding = State.resolve(context, target.name);
     if (binding.kind === "alias") {
-      throw new MutError(`\`${target.name}\` refers into state and can't be reassigned`, target.start);
+      throw new MutError(
+        `\`${target.name}\` refers into state and can't be reassigned`,
+        target.start,
+      );
     }
     if (binding.kind === "maybeState" || State.touches(context, node.right)) {
       State.markMaybeState(context, target.name, null);
@@ -76,7 +109,8 @@ export function assignment(context: Block.Context, node: Ast.Node, parent: Ast.N
     : [
         `Path.write(${CONTEXT}, ${CONTEXT}.compoundPath = [`,
         ...keys,
-        `], ${RUNTIME}.Path.read(${path.root}, ${CONTEXT}.compoundPath) ${operator} (`,
+        `], ${RUNTIME}.Path.read(${path.root}, ${CONTEXT}.compoundPath) `,
+        `${operator} (`,
         node.right,
         ")",
       ];
@@ -84,32 +118,73 @@ export function assignment(context: Block.Context, node: Ast.Node, parent: Ast.N
 }
 
 /** Compiles `++` / `--` on state. */
-export function update(context: Block.Context, node: Ast.Node, parent: Ast.Node, depth: number): void {
+export function update(
+  context: Block.Context,
+  node: Ast.Node,
+  parent: Ast.Node,
+  depth: number,
+): void {
   if (Ast.unwrap(node.argument).type !== "MemberExpression") {
     return;
   }
   const path = State.pathOf(context, node.argument, { depth, forWrite: true });
-  if (!path || emitInline(context, parent, path, { kind: "update", operator: node.operator })) {
+  if (
+    !path ||
+    emitInline(context, parent, path, {
+      kind: "update",
+      operator: node.operator,
+    })
+  ) {
     return;
   }
   const delta = node.operator === "++" ? 1 : -1;
-  const helperCall = [`Path.increment(${CONTEXT}, [`, ...Codegen.joinKeys(path.keys), `], ${delta}`];
-  emitHelper(context, node, parent, path, helperCall, node.prefix ? "result" : "previousValue");
+  const helperCall = [
+    `Path.increment(${CONTEXT}, [`,
+    ...Codegen.joinKeys(path.keys),
+    `], ${delta}`,
+  ];
+  emitHelper(
+    context,
+    node,
+    parent,
+    path,
+    helperCall,
+    node.prefix ? "result" : "previousValue",
+  );
 }
 
 /** `delete path.key` (named `remove` since `delete` is reserved). */
-export function remove(context: Block.Context, node: Ast.Node, parent: Ast.Node, depth: number): void {
-  if (node.operator !== "delete" || Ast.unwrap(node.argument).type !== "MemberExpression") {
+export function remove(
+  context: Block.Context,
+  node: Ast.Node,
+  parent: Ast.Node,
+  depth: number,
+): void {
+  if (
+    node.operator !== "delete" ||
+    Ast.unwrap(node.argument).type !== "MemberExpression"
+  ) {
     return;
   }
-  const path = State.pathOf(context, node.argument, { depth, forWrite: true, verb: "deletes" });
+  const path = State.pathOf(context, node.argument, {
+    depth,
+    forWrite: true,
+    verb: "deletes",
+  });
   if (!path || emitInline(context, parent, path, { kind: "delete" })) {
     return;
   }
-  emitHelper(context, node, parent, path, [`Path.remove(${CONTEXT}, [`, ...Codegen.joinKeys(path.keys), "]"]);
+  emitHelper(context, node, parent, path, [
+    `Path.remove(${CONTEXT}, [`,
+    ...Codegen.joinKeys(path.keys),
+    "]",
+  ]);
 }
 
-/** `path.push(x)`, `path.set(k, v)`, …, or a computed method (`path[m](x)`), which may mutate too. */
+/**
+ * `path.push(x)`, `path.set(k, v)`, …, or a computed method (`path[m](x)`),
+ * which may mutate too.
+ */
 export function mutatingCall(
   context: Block.Context,
   call: Ast.Node,
@@ -120,11 +195,18 @@ export function mutatingCall(
   const callee = Ast.unwrap(call.callee);
   if (callee.optional || call.optional) {
     if (State.touches(context, callee.object)) {
-      throw new MutError("optional mutating calls on state aren't supported yet", call.start);
+      throw new MutError(
+        "optional mutating calls on state aren't supported yet",
+        call.start,
+      );
     }
     return;
   }
-  const path = State.pathOf(context, callee.object, { depth, forWrite: true, verb: "mutating calls" });
+  const path = State.pathOf(context, callee.object, {
+    depth,
+    forWrite: true,
+    verb: "mutating calls",
+  });
   if (!path) {
     return;
   }
@@ -149,27 +231,42 @@ function isReadOnlyCall(context: Block.Context, callee: Ast.Node): boolean {
   if (context.options.readonlyCalls.includes(name)) {
     return true;
   }
-  return State.resolve(context, name.split(".")[0]).kind === "global" && Calls.isReadOnlyGlobal(name);
+  return (
+    State.resolve(context, name.split(".")[0]).kind === "global" &&
+    Calls.isReadOnlyGlobal(name)
+  );
 }
 
 function mayChangeReceiver(call: Ast.Node, method: string | null): boolean {
   if (!method || !Calls.isReadOnly(method)) {
     return true;
   }
-  // An iteration method with a function reference (not an inline callback) may change the elements.
+  // An iteration method with a function reference (not an inline callback) may
+  // change the elements.
   return Calls.isIteration(method) && !Ast.isFunction(call.arguments[0]);
 }
 
-function lendState(context: Block.Context, call: Ast.Node, argument: Ast.Node, depth: number): void {
-  const value = argument.type === "SpreadElement" ? argument.argument : argument;
+function lendState(
+  context: Block.Context,
+  call: Ast.Node,
+  argument: Ast.Node,
+  depth: number,
+): void {
+  const value =
+    argument.type === "SpreadElement" ? argument.argument : argument;
   const callee = context.sourceOf(call.callee);
   const expression = Ast.unwrap(value);
-  const binding = expression.type === "Identifier" ? State.resolve(context, expression.name) : null;
+  const binding =
+    expression.type === "Identifier"
+      ? State.resolve(context, expression.name)
+      : null;
   if (binding?.kind === "maybeState") {
     if (binding.promotable) {
       throw new PromoteToAlias(binding.promotable);
     }
-    const message = `mut: \`${expression.name}\` may point into state; changes \`${callee}\` makes through it aren't tracked`;
+    const message =
+      `mut: \`${expression.name}\` may point into state; ` +
+      `changes \`${callee}\` makes through it aren't tracked`;
     context.output.warnings.push({ message, pos: expression.start });
     return;
   }
@@ -185,10 +282,15 @@ function lendState(context: Block.Context, call: Ast.Node, argument: Ast.Node, d
 
   const { opaqueCalls } = context.options;
   if (opaqueCalls === "error") {
-    throw new MutError(`\`${callee}\` may change state the compiler can't see into`, call.start);
+    throw new MutError(
+      `\`${callee}\` may change state the compiler can't see into`,
+      call.start,
+    );
   }
   if (opaqueCalls === "warn") {
-    const message = `mut: \`${callee}\` may change state, so it gets a deep copy (reconciled at the end of the block)`;
+    const message =
+      `mut: \`${callee}\` may change state, so it gets a deep copy ` +
+      "(reconciled at the end of the block)";
     context.output.warnings.push({ message, pos: call.start });
   }
   context.markReplaced(path.replaces);
@@ -202,12 +304,20 @@ function lendState(context: Block.Context, call: Ast.Node, argument: Ast.Node, d
   ]);
 }
 
-/** Lends state to the arguments (and the receiver, for unknown methods) of a call the compiler can't see into. */
-export function opaqueCall(context: Block.Context, call: Ast.Node, depth: number): void {
+/**
+ * Lends state to the arguments (and the receiver, for unknown methods) of a
+ * call the compiler can't see into.
+ */
+export function opaqueCall(
+  context: Block.Context,
+  call: Ast.Node,
+  depth: number,
+): void {
   if (isReadOnlyCall(context, call.callee)) {
     return;
   }
-  const method = call.type === "CallExpression" ? Ast.methodName(call) : undefined;
+  const method =
+    call.type === "CallExpression" ? Ast.methodName(call) : undefined;
   if (method !== undefined && mayChangeReceiver(call, method)) {
     lendState(context, call, Ast.unwrap(call.callee).object, depth);
   }

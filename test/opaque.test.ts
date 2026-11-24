@@ -82,7 +82,10 @@ it("leaves read-only calls alone", () => {
   let s = state;
   let text = "";
   mut: {
-    text = JSON.stringify(s.user) + s.user.name.toUpperCase() + Object.keys(s.todos).join();
+    text =
+      JSON.stringify(s.user) +
+      s.user.name.toUpperCase() +
+      Object.keys(s.todos).join();
   }
   expect(text).toContain("X");
   expect(s).toBe(state);

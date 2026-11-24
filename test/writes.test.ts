@@ -54,7 +54,12 @@ it("compound, logical and update operators", () => {
     s.count++;
     --s.user.age;
   }
-  expect([s.count, s.user.age, s.user.nick, s.user.name]).toEqual([6, 2, "n", "x"]);
+  expect([s.count, s.user.age, s.user.nick, s.user.name]).toEqual([
+    6,
+    2,
+    "n",
+    "x",
+  ]);
 });
 
 it("computed keys and array indexes", () => {
@@ -107,7 +112,13 @@ it("writes used as expressions return their JS value", () => {
   let s = state;
   let out: unknown[] = [];
   mut: {
-    out.push((s.count = 3), s.count++, ++s.count, delete s.settings.theme, (s.user.age += 1));
+    out.push(
+      (s.count = 3),
+      s.count++,
+      ++s.count,
+      delete s.settings.theme,
+      (s.user.age += 1),
+    );
   }
   expect(out).toEqual([3, 3, 5, true, 2]);
 });
@@ -131,7 +142,7 @@ it("works on parameters and single statements", () => {
 it("handles TypeScript syntax in paths", () => {
   let s: { a: { b: number } | null } = freeze({ a: { b: 1 } });
   mut: {
-    // biome-ignore lint/style/noNonNullAssertion: this test checks that the plugin handles `!` in a write path.
+    // biome-ignore lint/style/noNonNullAssertion: tests `!` in a write path.
     s.a!.b = 2;
     (s.a as Record<string, number>).c = 3;
   }

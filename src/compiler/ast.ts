@@ -5,9 +5,21 @@
 // biome-ignore lint/suspicious/noExplicitAny: see the comment above.
 export type Node = any;
 
-export type BindingKind = "var" | "let" | "const" | "param" | "catch" | "function" | "class" | "import";
+export type BindingKind =
+  | "var"
+  | "let"
+  | "const"
+  | "param"
+  | "catch"
+  | "function"
+  | "class"
+  | "import";
 
-const FUNCTION_TYPES = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
+const FUNCTION_TYPES = new Set([
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+]);
 // TypeScript wrappers around a runtime expression, e.g. `x as T` or `x!`.
 const TS_EXPRESSION_WRAPPERS = new Set([
   "TSAsExpression",
@@ -29,16 +41,28 @@ const NON_CODE_FIELDS = new Set([
   ],
 ]);
 
-/** Whether `node` is a function declaration, function expression or arrow function. */
-export const isFunction = (node: Node): boolean => FUNCTION_TYPES.has(node?.type);
+/**
+ * Whether `node` is a function declaration, function expression or arrow
+ * function.
+ */
+export const isFunction = (node: Node): boolean =>
+  FUNCTION_TYPES.has(node?.type);
 
-/** Type-only TypeScript syntax (types, interfaces, …), which has no runtime code to compile. */
+/**
+ * Type-only TypeScript syntax (types, interfaces, …), which has no runtime code
+ * to compile.
+ */
 export const isTypeOnly = (node: Node): boolean =>
-  node.type.startsWith("TS") && !TS_EXPRESSION_WRAPPERS.has(node.type) && node.type !== "TSInstantiationExpression";
+  node.type.startsWith("TS") &&
+  !TS_EXPRESSION_WRAPPERS.has(node.type) &&
+  node.type !== "TSInstantiationExpression";
 
 /** The expression inside parentheses and TypeScript wrappers. */
 export const unwrap = (node: Node): Node =>
-  node.type === "ParenthesizedExpression" || TS_EXPRESSION_WRAPPERS.has(node.type) ? unwrap(node.expression) : node;
+  node.type === "ParenthesizedExpression" ||
+  TS_EXPRESSION_WRAPPERS.has(node.type)
+    ? unwrap(node.expression)
+    : node;
 
 /** The child nodes that hold code, in source order. */
 export function children(node: Node): Node[] {
@@ -57,7 +81,10 @@ export function children(node: Node): Node[] {
   return found;
 }
 
-/** Child nodes that hold code, skipping identifiers that aren't variable references (property names, labels). */
+/**
+ * Child nodes that hold code, skipping identifiers that aren't variable
+ * references (property names, labels).
+ */
 export function references(node: Node): Node[] {
   switch (node.type) {
     case "MemberExpression":
@@ -65,7 +92,9 @@ export function references(node: Node): Node[] {
     case "Property":
     case "MethodDefinition":
     case "PropertyDefinition":
-      return node.computed ? children(node) : children(node).filter((child) => child !== node.key);
+      return node.computed
+        ? children(node)
+        : children(node).filter((child) => child !== node.key);
     case "LabeledStatement":
       return [node.body];
     case "BreakStatement":
@@ -76,7 +105,10 @@ export function references(node: Node): Node[] {
   }
 }
 
-/** `a.b.c` for an expression made of plain identifiers and property names, else undefined. */
+/**
+ * `a.b.c` for an expression made of plain identifiers and property names, else
+ * undefined.
+ */
 export function dottedName(node: Node): string | undefined {
   const expression = unwrap(node);
   if (expression.type === "Identifier") {
@@ -102,7 +134,9 @@ export function methodName(call: Node): string | null | undefined {
     return callee.property.name;
   }
   const key = callee.property;
-  return key.type === "Literal" && typeof key.value === "string" ? key.value : null;
+  return key.type === "Literal" && typeof key.value === "string"
+    ? key.value
+    : null;
 }
 
 /** The identifier a member chain starts from (`u` in `u.a.b`), if any. */
@@ -121,7 +155,9 @@ export function bindingNames(pattern: Node): string[] {
       return [pattern.name];
     case "ObjectPattern":
       return pattern.properties.flatMap((property: Node) =>
-        bindingNames(property.type === "RestElement" ? property.argument : property.value),
+        bindingNames(
+          property.type === "RestElement" ? property.argument : property.value,
+        ),
       );
     case "ArrayPattern":
       return pattern.elements.flatMap(bindingNames);
@@ -136,7 +172,10 @@ export function bindingNames(pattern: Node): string[] {
   }
 }
 
-/** Whether a variable of this kind can be assigned a new value (so it can hold an updated state root). */
+/**
+ * Whether a variable of this kind can be assigned a new value (so it can hold
+ * an updated state root).
+ */
 export const isReassignable = (kind: BindingKind): boolean =>
   kind === "let" || kind === "var" || kind === "param" || kind === "catch";
 
@@ -152,7 +191,9 @@ function statementBindings(statement: Node): [string, BindingKind][] {
         return [];
       }
       const kind = statement.kind === "let" ? "let" : "const";
-      return statement.declarations.flatMap((declarator: Node) => bindingNames(declarator.id).map(withKind(kind)));
+      return statement.declarations.flatMap((declarator: Node) =>
+        bindingNames(declarator.id).map(withKind(kind)),
+      );
     }
     case "FunctionDeclaration":
       return statement.id ? [[statement.id.name, "function"]] : [];
@@ -161,7 +202,9 @@ function statementBindings(statement: Node): [string, BindingKind][] {
     case "TSEnumDeclaration":
       return [[statement.id.name, "const"]];
     case "ImportDeclaration":
-      return statement.specifiers.map((specifier: Node) => withKind("import")(specifier.local.name));
+      return statement.specifiers.map((specifier: Node) =>
+        withKind("import")(specifier.local.name),
+      );
     case "ExportNamedDeclaration":
     case "ExportDefaultDeclaration":
       return statementBindings(statement.declaration);
@@ -174,7 +217,9 @@ function statementBindings(statement: Node): [string, BindingKind][] {
 function hoistedVars(node: Node): [string, BindingKind][] {
   const own =
     node.type === "VariableDeclaration" && node.kind === "var"
-      ? node.declarations.flatMap((declarator: Node) => bindingNames(declarator.id).map(withKind("var")))
+      ? node.declarations.flatMap((declarator: Node) =>
+          bindingNames(declarator.id).map(withKind("var")),
+        )
       : [];
   return [
     ...own,
@@ -192,7 +237,9 @@ function declaredBy(node: Node): [string, BindingKind][] | null {
     case "StaticBlock":
       return node.body.flatMap(statementBindings);
     case "SwitchStatement":
-      return node.cases.flatMap((switchCase: Node) => switchCase.consequent.flatMap(statementBindings));
+      return node.cases.flatMap((switchCase: Node) =>
+        switchCase.consequent.flatMap(statementBindings),
+      );
     case "ForStatement":
       return statementBindings(node.init);
     case "ForInStatement":
@@ -204,8 +251,12 @@ function declaredBy(node: Node): [string, BindingKind][] | null {
     case "FunctionExpression":
     case "ArrowFunctionExpression":
       return [
-        ...(node.type === "FunctionExpression" && node.id ? [withKind("const")(node.id.name)] : []),
-        ...node.params.flatMap((param: Node) => bindingNames(param).map(withKind("param"))),
+        ...(node.type === "FunctionExpression" && node.id
+          ? [withKind("const")(node.id.name)]
+          : []),
+        ...node.params.flatMap((param: Node) =>
+          bindingNames(param).map(withKind("param")),
+        ),
         ...(node.body.type === "BlockStatement" ? hoistedVars(node.body) : []),
       ];
     default:
@@ -216,7 +267,9 @@ function declaredBy(node: Node): [string, BindingKind][] | null {
 const scopeCache = new WeakMap<Node, ReadonlyMap<string, BindingKind> | null>();
 
 /** The names `node` declares, or null if it doesn't introduce a scope. */
-export function scopeBindings(node: Node): ReadonlyMap<string, BindingKind> | null {
+export function scopeBindings(
+  node: Node,
+): ReadonlyMap<string, BindingKind> | null {
   const cached = scopeCache.get(node);
   if (cached !== undefined) {
     return cached;

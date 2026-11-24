@@ -14,16 +14,30 @@ export interface TransformResult {
   warnings: Warning[];
 }
 
-/** Cheap check before parsing: could the code contain a `mut:` label? (Also the plugin's hook filter.) */
+/**
+ * Cheap check before parsing: could the code contain a `mut:` label? (Also the
+ * plugin's hook filter.)
+ */
 export const MAY_CONTAIN_MUT_BLOCK = /\bmut\s*:/;
 
-/** Compiles the `mut:` blocks in `code` (module `id`), or returns null if there is nothing to compile. */
-export function transform(code: string, id: string, input: Options.Input = {}): TransformResult | null {
+/**
+ * Compiles the `mut:` blocks in `code` (module `id`), or returns null if there
+ * is nothing to compile.
+ */
+export function transform(
+  code: string,
+  id: string,
+  input: Options.Input = {},
+): TransformResult | null {
   if (!MAY_CONTAIN_MUT_BLOCK.test(code)) {
     return null;
   }
   const options = Options.resolve(input);
-  const ast = parseAst(code, { lang: languageOf(id), preserveParens: true }, id);
+  const ast = parseAst(
+    code,
+    { lang: languageOf(id), preserveParens: true },
+    id,
+  );
   const magic = new MagicString(code);
   const warnings: Warning[] = [];
 
@@ -52,8 +66,12 @@ export function transform(code: string, id: string, input: Options.Input = {}): 
   };
 }
 
-// Only the outermost `mut:` statements: nested ones are compiled as part of their outer block.
-function* mutBlocks(node: Ast.Node, ancestors: Ast.Node[] = []): Generator<{ label: Ast.Node; enclosing: Ast.Node[] }> {
+// Only the outermost `mut:` statements: nested ones are compiled as part of
+// their outer block.
+function* mutBlocks(
+  node: Ast.Node,
+  ancestors: Ast.Node[] = [],
+): Generator<{ label: Ast.Node; enclosing: Ast.Node[] }> {
   if (node.type === "LabeledStatement" && node.label.name === "mut") {
     yield { label: node, enclosing: [...ancestors] };
     return;
@@ -65,8 +83,8 @@ function* mutBlocks(node: Ast.Node, ancestors: Ast.Node[] = []): Generator<{ lab
   ancestors.pop();
 }
 
-// Each pass may find a local that is written through; it is then promoted to an alias and the
-// block is analysed again, until a pass completes.
+// Each pass may find a local that is written through; it is then promoted to an
+// alias and the block is analysed again, until a pass completes.
 function compileBlock(
   code: string,
   label: Ast.Node,
@@ -78,7 +96,8 @@ function compileBlock(
     try {
       const input = { code, options, enclosing, promoted };
       let output = Block.analyse(label, { ...input, inline: options.inline });
-      // Restoring sharing only knows the helpers' copies, so blocks that lend state use helpers throughout.
+      // Restoring sharing only knows the helpers' copies, so blocks that lend
+      // state use helpers throughout.
       if (output.lentRoots.size && options.inline) {
         output = Block.analyse(label, { ...input, inline: false });
       }
@@ -89,14 +108,22 @@ function compileBlock(
       }
       const { binding } = error;
       if (promoted.has(binding)) {
-        throw new MutError(`can't track writes through \`${binding.name}\``, binding.start);
+        throw new MutError(
+          `can't track writes through \`${binding.name}\``,
+          binding.start,
+        );
       }
       promoted.add(binding);
     }
   }
 }
 
-function replaceRange(magic: MagicString, start: number, end: number, text: string): void {
+function replaceRange(
+  magic: MagicString,
+  start: number,
+  end: number,
+  text: string,
+): void {
   if (start < end) {
     magic.overwrite(start, end, text, { contentOnly: true });
   } else if (text) {
@@ -104,8 +131,12 @@ function replaceRange(magic: MagicString, start: number, end: number, text: stri
   }
 }
 
-// Node parts are kept in place rather than copied, so their own edits and sourcemap survive.
-function applyEdit(magic: MagicString, { start, end, parts }: Codegen.Edit): void {
+// Node parts are kept in place rather than copied, so their own edits and
+// sourcemap survive.
+function applyEdit(
+  magic: MagicString,
+  { start, end, parts }: Codegen.Edit,
+): void {
   let position = start;
   let text = "";
   for (const part of parts) {
@@ -121,7 +152,12 @@ function applyEdit(magic: MagicString, { start, end, parts }: Codegen.Edit): voi
 }
 
 // The label is only kept when `break mut` needs it.
-function wrapBlock(magic: MagicString, label: Ast.Node, output: Block.Output, freeze: boolean): void {
+function wrapBlock(
+  magic: MagicString,
+  label: Ast.Node,
+  output: Block.Output,
+  freeze: boolean,
+): void {
   const { open, close } = Codegen.blockWrapper({
     usesContext: output.usesContext,
     copyVariables: [...output.copyVariables.values()],

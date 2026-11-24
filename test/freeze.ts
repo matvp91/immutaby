@@ -1,4 +1,7 @@
-/** Deep-freezes `value`, so any write to the base throws (test modules run in strict mode). */
+/**
+ * Deep-freezes `value`, so any write to the base throws (test modules run in
+ * strict mode).
+ */
 export function freeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     Object.freeze(value);
