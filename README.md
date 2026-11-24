@@ -152,7 +152,7 @@ pnpm build     # emit dist/
 
 Examples: [examples/basic](examples/basic) (Rolldown) and [examples/react](examples/react) (a todo list with `useReducer`; run `pnpm build`, then `pnpm --filter immutaby-example-react dev`).
 
-The design is described in [docs/specs/immutaby-design.md](docs/specs/immutaby-design.md).
+The design is described in [docs/immutaby-design.md](docs/immutaby-design.md).
 
 ## License
 
