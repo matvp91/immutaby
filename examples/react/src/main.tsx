@@ -1,6 +1,6 @@
-import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App.tsx";
+import { Profile } from "./Profile.tsx";
+import { Todos } from "./Todo/index.tsx";
 
 const root = document.getElementById("root");
 if (!root) {
@@ -8,7 +8,8 @@ if (!root) {
 }
 
 createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+  <main>
+    <Todos />
+    <Profile />
+  </main>,
 );

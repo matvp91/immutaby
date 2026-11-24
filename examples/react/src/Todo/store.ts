@@ -24,6 +24,9 @@ export const initialState: State = {
 /**
  * Written as mutations; compiled into copy-on-write updates. Untouched todos
  * keep their identity, so memoized rows don't re-render.
+ *
+ * Comment out `mut:` and the app stops updating: the reducer then mutates
+ * `state` in place and returns the same object, so React sees no change.
  */
 export function reducer(state: State, action: Action): State {
   let s = state;

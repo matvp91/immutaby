@@ -1,9 +1,9 @@
 import type { Dispatch, SubmitEvent } from "react";
 import { memo, useReducer } from "react";
-import type { Action, Todo } from "./todos.ts";
-import { initialState, reducer } from "./todos.ts";
+import type { Action, Todo } from "./store.ts";
+import { initialState, reducer } from "./store.ts";
 
-export function App() {
+export function Todos() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const remaining = state.todos.filter((todo) => !todo.done).length;
 
@@ -18,8 +18,8 @@ export function App() {
   }
 
   return (
-    <main>
-      <h1>Todos</h1>
+    <section>
+      <h2>Todos</h2>
       <form onSubmit={add}>
         <input name="title" placeholder="What needs doing?" />
         <button type="submit">Add</button>
@@ -35,7 +35,7 @@ export function App() {
           Clear done
         </button>
       </p>
-    </main>
+    </section>
   );
 }
 
