@@ -314,16 +314,15 @@ Single package `immutaby`, ESM-only:
 src/
   index.ts          plugin + public exports
   options.ts        Options.Input / Options.Resolved / Options.resolve
-  compiler/         each file is a namespace (`import * as State from "./state.ts"`)
-    transform.ts    entry: parse → find blocks → compile (with alias retries) → apply edits
-    ast.ts          AST helpers and scope bindings
-    calls.ts        which methods/calls mutate, iterate or only read
-    codegen.ts      pure builders for generated code
-    errors.ts       MutError, Warning, PromoteToAlias
-    block.ts        analysing one block: its Context, the traversal and dispatch
-    state.ts        resolving names, and which state location an expression denotes
-    writes.ts       writes, mutating calls, and opaque calls (lending deep copies)
+  compiler/         named imports (`import { pathOf } from "./resolve.ts"`), except modules used as namespaces: the helper libraries (`Ast`, `Codegen`) and the handlers (`Aliases.forOf`, `Writes.remove`)
+    transform.ts    entry: parse → find blocks → compile each → apply edits, add the import
+    compile.ts      compiling one block: the pass state and its Context, the traversal and dispatch, alias retries
+    resolve.ts      read-only: what a name or expression refers to (bindings, state paths, roots)
     aliases.ts      locals, for...of and callbacks that point into state
+    writes.ts       writes, mutating calls, and opaque calls (lending deep copies)
+    codegen.ts      pure builders for generated code, and generated variable names
+    ast.ts          AST helpers, scope bindings, and which built-in methods/globals mutate, iterate or only read
+    errors.ts       MutError, Warning, PromoteToAlias
   runtime/          `immutaby/runtime`
     index.ts        flat names used by generated code
     draft.ts        draftables, copies, the block Context, deep copy, freeze
@@ -331,6 +330,21 @@ src/
     lending.ts      lending deep copies and restoring sharing
 test/  bench/  examples/  docs/specs/
 ```
+
+Compiler modules keep side effects in as few places as possible:
+
+- `ast`, `errors`, `codegen` and `resolve` have no side effects. `resolve` may
+  throw (`MutError`, or `PromoteToAlias` to restart the pass) but records
+  nothing. `codegen`'s one stateful piece is the name allocator it creates.
+- Only `codegen` knows the shape of generated code: the runtime namespace, its
+  helpers, and generated variable names.
+- Only `compile` holds a pass's state (scopes, replaced nodes, callback tables,
+  output). The `aliases` and `writes` handlers read through `resolve` and the
+  Context's lookups, and change state only through its named methods
+  (`emit`, `declareAlias`, `recordWrite`, `warn`, …).
+- Only `transform` touches the parser and `MagicString`.
+- Value imports form one-way dependencies: `transform → compile → aliases,
+  writes → resolve → codegen → ast`. Handlers import `compile` for types only.
 
 Exports: `immutaby` (the plugin factory, `transform`, types, `immerable`) and
 `immutaby/runtime` (the helpers, auto-imported by the plugin). Tooling:

@@ -1,5 +1,5 @@
-import type { StateNode } from "./draft.ts";
-import * as Draft from "./draft.ts";
+import type { Context, StateNode } from "./draft.ts";
+import { ownAlong, ownedCopy } from "./draft.ts";
 
 /**
  * A key resolved at runtime: `s.todos.find(p)` becomes the index of the first
@@ -82,7 +82,7 @@ export function isUnchanged(
  * `root.path = value`.
  */
 export function write(
-  context: Draft.Context,
+  context: Context,
   path: Keys,
   value: unknown,
   root: StateNode,
@@ -94,8 +94,8 @@ export function write(
     return root;
   }
 
-  const newRoot = Draft.owned(context, root);
-  Draft.ownAlong(context, newRoot, path, last)[key] = value;
+  const newRoot = ownedCopy(context, root);
+  ownAlong(context, newRoot, path, last)[key] = value;
   return newRoot;
 }
 
@@ -103,7 +103,7 @@ export function write(
  * `root.path++` / `root.path--`, with `delta` of 1 or -1.
  */
 export function increment(
-  context: Draft.Context,
+  context: Context,
   path: Keys,
   delta: 1 | -1,
   root: StateNode,
@@ -120,7 +120,7 @@ export function increment(
  * `delete root.path`.
  */
 export function remove(
-  context: Draft.Context,
+  context: Context,
   path: Keys,
   root: StateNode,
 ): StateNode {
@@ -131,8 +131,8 @@ export function remove(
     return root;
   }
 
-  const newRoot = Draft.owned(context, root);
-  delete Draft.ownAlong(context, newRoot, path, last)[key];
+  const newRoot = ownedCopy(context, root);
+  delete ownAlong(context, newRoot, path, last)[key];
   return newRoot;
 }
 
@@ -187,7 +187,7 @@ function wouldMutate(target: StateNode, method: Key, args: unknown[]): boolean {
  * Map and Set mutators).
  */
 export function callMethod(
-  context: Draft.Context,
+  context: Context,
   path: Keys,
   method: Key,
   args: unknown[],
@@ -199,8 +199,8 @@ export function callMethod(
     return root;
   }
 
-  const newRoot = Draft.owned(context, root);
-  context.result = Draft.ownAlong(context, newRoot, path, path.length)[method](
+  const newRoot = ownedCopy(context, root);
+  context.result = ownAlong(context, newRoot, path, path.length)[method](
     ...args,
   );
   return newRoot;

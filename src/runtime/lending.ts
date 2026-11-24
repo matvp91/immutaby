@@ -1,37 +1,34 @@
-import type { StateNode } from "./draft.ts";
-import * as Draft from "./draft.ts";
-import * as Path from "./path.ts";
+import type { Context, StateNode } from "./draft.ts";
+import { deepCopy, isObject, ownAlong, ownedCopy } from "./draft.ts";
+import type { Key, Keys } from "./path.ts";
+import { read } from "./path.ts";
 
 /**
  * Puts a deep copy of `root.path` into the new tree and leaves it in
  * `context.result`, to hand to the callee.
  */
-export function lend(
-  context: Draft.Context,
-  path: Path.Keys,
-  root: StateNode,
-): StateNode {
-  const value = Path.read(root, path);
-  if (!Draft.isObject(value)) {
+export function lend(context: Context, path: Keys, root: StateNode): StateNode {
+  const value = read(root, path);
+  if (!isObject(value)) {
     context.result = value;
     return root;
   }
   if (path.length === 0) {
-    context.result = Draft.deepCopy(context, root);
+    context.result = deepCopy(context, root);
     return context.result;
   }
 
-  const newRoot = Draft.owned(context, root);
+  const newRoot = ownedCopy(context, root);
   const last = path.length - 1;
-  const copy = Draft.deepCopy(context, value);
-  Draft.ownAlong(context, newRoot, path, last)[path[last] as Path.Key] = copy;
+  const copy = deepCopy(context, value);
+  ownAlong(context, newRoot, path, last)[path[last] as Key] = copy;
   context.result = copy;
   return newRoot;
 }
 
 function hasSameEntries(copy: StateNode, base: StateNode): boolean {
   if (
-    !Draft.isObject(base) ||
+    !isObject(base) ||
     Object.getPrototypeOf(copy) !== Object.getPrototypeOf(base)
   ) {
     return false;
@@ -64,7 +61,7 @@ function hasSameEntries(copy: StateNode, base: StateNode): boolean {
  * to its counterpart in `base` back for that original.
  */
 export function restoreSharing(
-  context: Draft.Context,
+  context: Context,
   node: StateNode,
   base: StateNode,
 ): StateNode {

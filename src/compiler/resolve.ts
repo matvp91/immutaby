@@ -1,9 +1,42 @@
 import * as Ast from "./ast.ts";
-import type * as Block from "./block.ts";
-import * as Calls from "./calls.ts";
-import type { Alias, PathKey } from "./codegen.ts";
-import { isPlainKey, joinArguments, RUNTIME } from "./codegen.ts";
+import * as Codegen from "./codegen.ts";
 import { MutError, PromoteToAlias } from "./errors.ts";
+
+// Read-only queries: what names and expressions refer to. Nothing here records
+// anything; the only effect is throwing.
+
+/**
+ * A scope inside the block.
+ */
+export interface Scope {
+  readonly bindings: ReadonlyMap<string, Ast.BindingKind>;
+
+  /**
+   * Locals compiled to state locations.
+   */
+  readonly aliases: ReadonlyMap<string, Codegen.Alias>;
+
+  /**
+   * Locals that may point into state, with their binding node when they can
+   * become an alias (else null).
+   */
+  readonly maybeState: ReadonlyMap<string, Ast.Node | null>;
+}
+
+/**
+ * What names are resolved against.
+ */
+export interface Scopes {
+  /**
+   * The scopes inside the block entered so far, innermost last.
+   */
+  readonly scopes: readonly Scope[];
+
+  /**
+   * The ancestors of the `mut:` label, where roots are declared.
+   */
+  readonly enclosing: readonly Ast.Node[];
+}
 
 export type Binding =
   /**
@@ -14,7 +47,7 @@ export type Binding =
   /**
    * A local compiled to a state location.
    */
-  | { kind: "alias"; alias: Alias }
+  | { kind: "alias"; alias: Codegen.Alias }
 
   /**
    * A local that may point into state; `promotable` is its binding node if it
@@ -35,7 +68,7 @@ export type Binding =
 /**
  * What `name` refers to at the current point of the block.
  */
-export function resolve(context: Block.Context, name: string): Binding {
+export function bindingOf(context: Scopes, name: string): Binding {
   for (let i = context.scopes.length - 1; i >= 0; i--) {
     const scope = context.scopes[i];
     if (!scope.bindings.has(name)) {
@@ -59,61 +92,29 @@ export function resolve(context: Block.Context, name: string): Binding {
   return { kind: "global" };
 }
 
-const scopeDeclaring = (
-  context: Block.Context,
-  name: string,
-): Block.Scope | undefined =>
-  context.scopes.findLast((scope) => scope.bindings.has(name));
-
-/**
- * Records that the local `name` may point into state; `promotable` is its
- * binding node if it can become an alias.
- */
-export function markMaybeState(
-  context: Block.Context,
-  name: string,
-  promotable: Ast.Node | null,
-): void {
-  scopeDeclaring(context, name)?.maybeState.set(name, promotable);
-}
-
-/**
- * Compiles the local bound by `binding` as `alias`; its declaration and the
- * `replaced` nodes get no edits of their own.
- */
-export function declareAlias(
-  context: Block.Context,
-  binding: Ast.Node,
-  alias: Alias,
-  replaced: readonly Ast.Node[] = [],
-): void {
-  scopeDeclaring(context, binding.name)?.aliases.set(binding.name, alias);
-  context.markReplaced([binding, ...replaced]);
-}
-
 /**
  * For a member path on a local that may become an alias (`u.address`), that
  * local's binding: writing through something derived from it must promote it
  * first.
  */
-export function promotableBase(
-  context: Block.Context,
+export function promotableBaseOf(
+  context: Scopes,
   expression: Ast.Node,
 ): Ast.Node | null {
   const base = Ast.chainBase(expression);
-  const binding = base && resolve(context, base.name);
+  const binding = base && bindingOf(context, base.name);
   return binding?.kind === "maybeState" ? binding.promotable : null;
 }
 
 /**
  * Whether `node` (outside nested functions) reads anything that may hold state.
  */
-export function touches(context: Block.Context, node: Ast.Node): boolean {
+export function touchesState(context: Scopes, node: Ast.Node): boolean {
   if (!node || Ast.isFunction(node) || Ast.isTypeOnly(node)) {
     return false;
   }
   if (node.type === "Identifier") {
-    const { kind } = resolve(context, node.name);
+    const { kind } = bindingOf(context, node.name);
     return kind !== "local" && kind !== "global";
   }
 
@@ -123,18 +124,18 @@ export function touches(context: Block.Context, node: Ast.Node): boolean {
     node.callee.type === "Identifier"
   ) {
     return node.arguments.some((argument: Ast.Node) =>
-      touches(context, argument),
+      touchesState(context, argument),
     );
   }
-  return Ast.references(node).some((child) => touches(context, child));
+  return Ast.references(node).some((child) => touchesState(context, child));
 }
 
 /**
  * A state location: a root variable plus the keys leading to it.
  */
-export interface Path {
+export interface StatePath {
   root: string;
-  keys: PathKey[];
+  keys: Codegen.PathKey[];
 
   /**
    * Source nodes the path's generated code replaces (they must not get edits of
@@ -172,33 +173,16 @@ export interface PathQuery {
 }
 
 /**
- * The alias for a local bound to `path`. Plain keys are kept; the others are
- * read from `holder`, which must then hold the resolved path at runtime.
- */
-export function aliasFor(
-  path: Path,
-  holder: string,
-): { alias: Alias; needsHolder: boolean } {
-  const keys = path.keys.map((key, i) =>
-    isPlainKey(key) ? key[0] : `${holder}[${i}]`,
-  );
-  return {
-    alias: { root: path.root, keys },
-    needsHolder: !path.keys.every(isPlainKey),
-  };
-}
-
-/**
  * Throws unless `root` can be rebound to an updated value from here.
  */
 export function assertWritableRoot(
-  context: Block.Context,
+  context: Scopes,
   root: string,
   at: Ast.Node,
   depth: number,
   verb: string,
 ): void {
-  const binding = resolve(context, root);
+  const binding = bindingOf(context, root);
   if (binding.kind !== "root") {
     return;
   }
@@ -220,15 +204,16 @@ export function assertWritableRoot(
 /**
  * The state location `expression` denotes, or null if it isn't state. For a
  * write, anything that may be state but can't be tracked is an error, and a
- * local that may point into state is promoted to an alias.
+ * local that may point into state must be promoted to an alias first (this
+ * throws `PromoteToAlias`).
  */
 export function pathOf(
-  context: Block.Context,
+  context: Scopes,
   expression: Ast.Node,
   query: PathQuery,
-): Path | null {
+): StatePath | null {
   const { depth, forWrite, verb = "writes" } = query;
-  const keys: PathKey[] = [];
+  const keys: Codegen.PathKey[] = [];
   let node = Ast.unwrap(expression);
 
   for (;;) {
@@ -244,7 +229,7 @@ export function pathOf(
     }
     const findIndexMethod =
       node.type === "CallExpression"
-        ? Calls.findIndexFor(Ast.methodName(node) ?? "")
+        ? Ast.findIndexMethodFor(Ast.methodName(node) ?? "")
         : undefined;
     if (
       findIndexMethod &&
@@ -256,14 +241,13 @@ export function pathOf(
       if (!list) {
         return null;
       }
-      const findKey = [
-        `${RUNTIME}.Path.findIndexKey(${JSON.stringify(findIndexMethod)}, `,
-        ...joinArguments(node.arguments),
-        ")",
-      ];
       return {
         ...list,
-        keys: [...list.keys, findKey, ...keys],
+        keys: [
+          ...list.keys,
+          Codegen.findKey(findIndexMethod, node.arguments),
+          ...keys,
+        ],
         replaces: [...list.replaces, node],
         hasFindKey: true,
         isDirect: false,
@@ -273,7 +257,7 @@ export function pathOf(
   }
 
   if (node.type === "Identifier") {
-    const binding = resolve(context, node.name);
+    const binding = bindingOf(context, node.name);
     if (binding.kind === "local") {
       return null;
     }
@@ -322,7 +306,7 @@ export function pathOf(
       node.start,
     );
   }
-  if (touches(context, node)) {
+  if (touchesState(context, node)) {
     throw new MutError(
       `can't track ${verb} through this expression yet`,
       node.start,

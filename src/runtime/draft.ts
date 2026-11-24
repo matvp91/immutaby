@@ -1,4 +1,4 @@
-import type * as Path from "./path.ts";
+import type { Keys } from "./path.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: state is arbitrary user data.
 export type StateNode = any;
@@ -80,7 +80,7 @@ export interface Context {
   /**
    * Path of a compound assignment (`+=`), so its keys are evaluated once.
    */
-  compoundPath: Path.Keys;
+  compoundPath: Keys;
 }
 
 /**
@@ -99,7 +99,7 @@ export function createContext(): Context {
  * The block's copy of `value`, made at most once. Primitives and non-draftables
  * pass through.
  */
-export function owned(context: Context, value: StateNode): StateNode {
+export function ownedCopy(context: Context, value: StateNode): StateNode {
   if (!isObject(value) || context.copies.has(value)) {
     return value;
   }
@@ -118,14 +118,14 @@ export function owned(context: Context, value: StateNode): StateNode {
 export function ownAlong(
   context: Context,
   root: StateNode,
-  path: Path.Keys,
+  path: Keys,
   depth: number,
 ): StateNode {
   let node = root;
   for (let i = 0; i < depth; i++) {
     const key = path[i] as PropertyKey;
     const child = node[key];
-    const copy = owned(context, child);
+    const copy = ownedCopy(context, child);
     if (copy !== child) {
       node[key] = copy;
     }
@@ -149,7 +149,7 @@ export function deepCopy(
   if (known) {
     return known;
   }
-  const copy = owned(context, value);
+  const copy = ownedCopy(context, value);
   if (!context.copies.has(copy)) {
     return value; // not draftable
   }

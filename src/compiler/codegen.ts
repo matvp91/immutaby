@@ -1,15 +1,15 @@
 import type * as Ast from "./ast.ts";
 
-/**
- * Namespace the runtime is imported as.
- */
-export const RUNTIME = "__imm";
+// The only module that knows the shape of generated code: the runtime's
+// namespace and helpers, and the names of generated variables. Every function
+// is pure except the allocator `createNames` returns.
 
-/**
- * Name of a block's runtime context, and prefix for the block's other generated
- * variables.
- */
-export const CONTEXT = "__imm_c";
+// Namespace the runtime is imported as.
+const RUNTIME = "__imm";
+
+// Name of a block's runtime context, and prefix for the block's other
+// generated variables.
+const CONTEXT = "__imm_c";
 
 /**
  * A piece of generated code: text, or a source node kept in place (so its own
@@ -67,44 +67,21 @@ export function member(base: string, key: string): string {
 export const aliasRead = (alias: Alias): string =>
   alias.keys.reduce(member, alias.root);
 
-/**
- * `parts` separated by commas, as in an argument list.
- */
-export const joinArguments = (nodes: Part[]): Part[] =>
+// `parts` separated by commas, as in an argument list.
+const joinArguments = (nodes: Part[]): Part[] =>
   nodes.flatMap((node, i) => (i ? [", ", node] : [node]));
 
-/**
- * `keys` separated by commas, as in an array literal of path keys.
- */
-export const joinKeys = (keys: PathKey[]): Part[] =>
-  keys.flatMap((key, i) => (i ? [", ", ...key] : key));
+// `keys` as an array literal of path keys.
+const keyArray = (keys: PathKey[]): Part[] => [
+  "[",
+  ...keys.flatMap((key, i) => (i ? [", ", ...key] : key)),
+  "]",
+];
 
 /**
- * A helper call that rebinds the root: `root = helper(..., root)` as a
- * statement, or `(root = helper(..., root), context.slot)` as an expression.
- * The root is passed last so it is read after the right-hand side has run,
- * which keeps writes nested in the right-hand side.
+ * Allocates a pass's generated variables.
  */
-export function helperWrite(
-  root: string,
-  helperCall: Part[],
-  asExpression: boolean,
-  resultSlot: "result" | "previousValue",
-): Part[] {
-  const write = [`${root} = ${RUNTIME}.`, ...helperCall, `, ${root})`];
-  return asExpression ? ["(", ...write, `, ${CONTEXT}.${resultSlot})`] : write;
-}
-
-export type InlineWrite =
-  | { kind: "set"; value: Ast.Node }
-  | { kind: "compound"; operator: string; value: Ast.Node }
-  | { kind: "update"; operator: string }
-  | { kind: "delete" };
-
-/**
- * Allocates the variables inline writes need.
- */
-export interface InlineVariables {
+export interface Names {
   /**
    * The variable holding the block's copy of the node at `path` (named by
    * source, e.g. `s["user"]`).
@@ -115,7 +92,189 @@ export interface InlineVariables {
    * A fresh variable for a computed key.
    */
   nextKey(): string;
+
+  /**
+   * A fresh variable for an index parameter added to a callback.
+   */
+  nextIndex(): string;
+
+  /**
+   * The copy variables allocated so far, declared when the block opens.
+   */
+  copies(): string[];
 }
+
+export function createNames(): Names {
+  const copies = new Map<string, string>();
+  let counter = 0;
+  return {
+    copyOf(path) {
+      let variable = copies.get(path);
+      if (!variable) {
+        variable = `${CONTEXT}_${copies.size}`;
+        copies.set(path, variable);
+      }
+      return variable;
+    },
+    nextKey: () => `${CONTEXT}_k${++counter}`,
+    nextIndex: () => `${CONTEXT}_i${++counter}`,
+    copies: () => [...copies.values()],
+  };
+}
+
+/**
+ * A path key resolved at runtime: the index the find-index `method` gives for
+ * the predicate in `args` (`s.todos.find(p)`).
+ */
+export const findKey = (method: string, args: Part[]): PathKey => [
+  `${RUNTIME}.Path.findIndexKey(${JSON.stringify(method)}, `,
+  ...joinArguments(args),
+  ")",
+];
+
+/**
+ * The value an alias's holder is initialised with: its path's keys, captured
+ * now, with any `find` key resolved once against `root`.
+ */
+export function pathHolder(
+  root: string,
+  keys: PathKey[],
+  hasFindKey: boolean,
+): Part[] {
+  return hasFindKey
+    ? [`${RUNTIME}.Path.resolve(`, ...keyArray(keys), `, ${root})`]
+    : keyArray(keys);
+}
+
+/**
+ * `for (const item of list)` as an index loop over `list`, which must be an
+ * array.
+ */
+export function indexLoopHeader(item: string, list: string): string {
+  const start = `(${RUNTIME}.Path.assertArray(${list}), 0)`;
+  return `for (let ${item} = ${start}; ${item} < ${list}.length; ${item}++) `;
+}
+
+/**
+ * The paths of the elements of the array at `root` plus `keys`, for a
+ * `for...of` over a path that isn't plain.
+ */
+export const elementsCall = (root: string, keys: PathKey[]): Part[] => [
+  `${RUNTIME}.Path.elements(() => ${root}, `,
+  ...keyArray(keys),
+  ")",
+];
+
+/**
+ * A callback's element parameter followed by an added index parameter.
+ */
+export const withIndexParam = (
+  element: Ast.Node,
+  index: string,
+  hasParens: boolean,
+): Part[] =>
+  hasParens ? [element, `, ${index}`] : ["(", element, `, ${index})`];
+
+/**
+ * An iteration method call on the array at `root` plus `keys` whose callback
+ * gets element paths instead of elements.
+ */
+export const iterateCall = (
+  root: string,
+  keys: PathKey[],
+  method: string,
+  args: Part[],
+): Part[] => [
+  `${RUNTIME}.Path.iterate(`,
+  ...keyArray(keys),
+  `, ${JSON.stringify(method)}, [`,
+  ...joinArguments(args),
+  `], ${root})`,
+];
+
+/**
+ * Lends a deep copy of the state at `root` plus `keys` to an opaque call: the
+ * root is rebound and the copy is the expression's value.
+ */
+export const lendCall = (root: string, keys: PathKey[]): Part[] => [
+  `(${root} = ${RUNTIME}.Lending.lend(${CONTEXT}, `,
+  ...keyArray(keys),
+  `, ${root}), ${CONTEXT}.result)`,
+];
+
+export type HelperWrite =
+  | { kind: "set"; value: Ast.Node }
+  | { kind: "compound"; operator: string; value: Ast.Node }
+  | { kind: "increment"; delta: 1 | -1; prefix: boolean }
+  | { kind: "remove" }
+
+  /**
+   * `method` is a string literal, or the computed key node.
+   */
+  | { kind: "callMethod"; method: Part; args: Ast.Node[] };
+
+function helperCall(root: string, keys: PathKey[], write: HelperWrite): Part[] {
+  const path = keyArray(keys);
+  switch (write.kind) {
+    case "set":
+      return [`Path.write(${CONTEXT}, `, ...path, ", ", write.value];
+    case "compound":
+      return [
+        `Path.write(${CONTEXT}, ${CONTEXT}.compoundPath = `,
+        ...path,
+        `, ${RUNTIME}.Path.read(${root}, ${CONTEXT}.compoundPath) `,
+        `${write.operator} (`,
+        write.value,
+        ")",
+      ];
+    case "increment":
+      return [`Path.increment(${CONTEXT}, `, ...path, `, ${write.delta}`];
+    case "remove":
+      return [`Path.remove(${CONTEXT}, `, ...path];
+    case "callMethod":
+      return [
+        `Path.callMethod(${CONTEXT}, `,
+        ...path,
+        ", ",
+        write.method,
+        ", [",
+        ...joinArguments(write.args),
+        "]",
+      ];
+  }
+}
+
+/**
+ * A write to `root` plus `keys` through a runtime helper that rebinds the
+ * root: `root = helper(..., root)` as a statement, or `(root = helper(...,
+ * root), context.result)` as an expression. The root is passed last so it is
+ * read after the right-hand side has run, which keeps writes nested in the
+ * right-hand side.
+ */
+export function helperWrite(
+  root: string,
+  keys: PathKey[],
+  write: HelperWrite,
+  asExpression: boolean,
+): Part[] {
+  const code = [
+    `${root} = ${RUNTIME}.`,
+    ...helperCall(root, keys, write),
+    `, ${root})`,
+  ];
+  if (!asExpression) {
+    return code;
+  }
+  const slot =
+    write.kind === "increment" && !write.prefix ? "previousValue" : "result";
+  return ["(", ...code, `, ${CONTEXT}.${slot})`];
+}
+
+export type InlineWrite =
+  | { kind: "set"; value: Ast.Node }
+  | { kind: "compound"; operator: string; value: Ast.Node }
+  | { kind: "update"; operator: string }
+  | { kind: "delete" };
 
 /**
  * A statement-level write to `root` plus `keys`, compiled to inline copies.
@@ -139,27 +298,27 @@ export function inlineWrite(
   keys: PathKey[],
   write: InlineWrite,
   sourceOf: (node: Ast.Node) => string,
-  variables: InlineVariables,
+  names: Names,
 ): Part[] {
   const code: Part[] = ["{ "];
 
   // Code reading each node on the path (root first), and the source-based name
   // of its copy variable.
   const nodes = [root];
-  const names = [root];
+  const paths = [root];
   let lastKey = "";
   keys.forEach(([key], i) => {
     if (typeof key === "string") {
       lastKey = key;
     } else {
-      lastKey = variables.nextKey();
+      lastKey = names.nextKey();
       code.push(`const ${lastKey} = `, key, "; ");
     }
     if (i === keys.length - 1) {
       return;
     }
     nodes.push(member(nodes[i], lastKey));
-    names.push(`${names[i]}[${typeof key === "string" ? key : sourceOf(key)}]`);
+    paths.push(`${paths[i]}[${typeof key === "string" ? key : sourceOf(key)}]`);
   });
 
   const parent = nodes[nodes.length - 1];
@@ -181,7 +340,7 @@ export function inlineWrite(
 
   const copies = nodes
     .map((node, i) => {
-      const copy = variables.copyOf(names[i]);
+      const copy = names.copyOf(paths[i]);
       const shallowCopy = `${RUNTIME}.Draft.shallowCopy(${node})`;
       return `if (${node} !== ${copy}) ${node} = ${copy} = ${shallowCopy}; `;
     })

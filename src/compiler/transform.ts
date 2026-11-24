@@ -1,12 +1,13 @@
 import type { SourceMap } from "magic-string";
 import MagicString from "magic-string";
 import { parseAst } from "rolldown/parseAst";
-import * as Options from "../options.ts";
+import type { Options } from "../options.ts";
+import { resolveOptions } from "../options.ts";
 import * as Ast from "./ast.ts";
-import * as Block from "./block.ts";
 import * as Codegen from "./codegen.ts";
+import type { CompiledBlock } from "./compile.ts";
+import { compileBlock } from "./compile.ts";
 import type { Warning } from "./errors.ts";
-import { MutError, PromoteToAlias } from "./errors.ts";
 
 export interface TransformResult {
   code: string;
@@ -27,12 +28,12 @@ export const MAY_CONTAIN_MUT_BLOCK = /\bmut\s*:/;
 export function transform(
   code: string,
   id: string,
-  input: Options.Input = {},
+  input: Options = {},
 ): TransformResult | null {
   if (!MAY_CONTAIN_MUT_BLOCK.test(code)) {
     return null;
   }
-  const options = Options.resolve(input);
+  const options = resolveOptions(input);
   const ast = parseAst(
     code,
     { lang: languageOf(id), preserveParens: true },
@@ -83,42 +84,6 @@ function* mutBlocks(
   ancestors.pop();
 }
 
-// Each pass may find a local that is written through; it is then promoted to an
-// alias and the block is analysed again, until a pass completes.
-function compileBlock(
-  code: string,
-  label: Ast.Node,
-  enclosing: Ast.Node[],
-  options: Options.Resolved,
-): Block.Output | null {
-  const promoted = new WeakSet<Ast.Node>();
-  for (;;) {
-    try {
-      const input = { code, options, enclosing, promoted };
-      let output = Block.analyse(label, { ...input, inline: options.inline });
-
-      // Restoring sharing only knows the helpers' copies, so blocks that lend
-      // state use helpers throughout.
-      if (output.lentRoots.size && options.inline) {
-        output = Block.analyse(label, { ...input, inline: false });
-      }
-      return output.edits.length ? output : null;
-    } catch (error) {
-      if (!(error instanceof PromoteToAlias)) {
-        throw error;
-      }
-      const { binding } = error;
-      if (promoted.has(binding)) {
-        throw new MutError(
-          `can't track writes through \`${binding.name}\``,
-          binding.start,
-        );
-      }
-      promoted.add(binding);
-    }
-  }
-}
-
 function replaceRange(
   magic: MagicString,
   start: number,
@@ -156,12 +121,12 @@ function applyEdit(
 function wrapBlock(
   magic: MagicString,
   label: Ast.Node,
-  output: Block.Output,
+  output: CompiledBlock,
   freeze: boolean,
 ): void {
   const { open, close } = Codegen.blockWrapper({
     usesContext: output.usesContext,
-    copyVariables: [...output.copyVariables.values()],
+    copyVariables: output.copyVariables,
     lentRoots: [...output.lentRoots],
     frozenRoots: freeze ? [...output.writtenRoots] : [],
   });

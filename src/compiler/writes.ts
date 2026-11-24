@@ -1,19 +1,17 @@
 import * as Ast from "./ast.ts";
-import type * as Block from "./block.ts";
-import * as Calls from "./calls.ts";
-import type { InlineWrite, Part } from "./codegen.ts";
 import * as Codegen from "./codegen.ts";
-import { CONTEXT, RUNTIME } from "./codegen.ts";
+import type { Context } from "./compile.ts";
 import { MutError, PromoteToAlias } from "./errors.ts";
-import * as State from "./state.ts";
+import type { StatePath } from "./resolve.ts";
+import { bindingOf, pathOf, touchesState } from "./resolve.ts";
 
 // Returns false when the write can't be inlined (not a statement, not a direct
 // path, or inlining is off).
 function emitInline(
-  context: Block.Context,
+  context: Context,
   statement: Ast.Node,
-  path: State.Path,
-  write: InlineWrite,
+  path: StatePath,
+  write: Codegen.InlineWrite,
 ): boolean {
   if (
     !context.inline ||
@@ -23,7 +21,7 @@ function emitInline(
     return false;
   }
   context.markReplaced(path.replaces);
-  context.output.writtenRoots.add(path.root);
+  context.recordWrite(path.root, false);
   context.emit(
     statement,
     Codegen.inlineWrite(
@@ -31,27 +29,25 @@ function emitInline(
       path.keys,
       write,
       context.sourceOf,
-      context.variables,
+      context.names,
     ),
   );
   return true;
 }
 
 function emitHelper(
-  context: Block.Context,
-  write: Ast.Node,
+  context: Context,
+  node: Ast.Node,
   parent: Ast.Node,
-  path: State.Path,
-  helperCall: Part[],
-  resultSlot: "result" | "previousValue" = "result",
+  path: StatePath,
+  write: Codegen.HelperWrite,
 ): void {
   context.markReplaced(path.replaces);
-  context.output.writtenRoots.add(path.root);
-  context.output.usesContext = true;
+  context.recordWrite(path.root, true);
   const asExpression = parent.type !== "ExpressionStatement";
   context.emit(
-    write,
-    Codegen.helperWrite(path.root, helperCall, asExpression, resultSlot),
+    node,
+    Codegen.helperWrite(path.root, path.keys, write, asExpression),
   );
 }
 
@@ -60,7 +56,7 @@ function emitHelper(
  * state.
  */
 export function assignment(
-  context: Block.Context,
+  context: Context,
   node: Ast.Node,
   parent: Ast.Node,
   depth: number,
@@ -68,60 +64,50 @@ export function assignment(
   const target = Ast.unwrap(node.left);
 
   if (target.type === "Identifier") {
-    const binding = State.resolve(context, target.name);
+    const binding = bindingOf(context, target.name);
     if (binding.kind === "alias") {
       throw new MutError(
         `\`${target.name}\` refers into state and can't be reassigned`,
         target.start,
       );
     }
-    if (binding.kind === "maybeState" || State.touches(context, node.right)) {
-      State.markMaybeState(context, target.name, null);
+    if (binding.kind === "maybeState" || touchesState(context, node.right)) {
+      context.markMaybeState(target.name, null);
     }
     return;
   }
   if (target.type !== "MemberExpression") {
     // Destructuring assignment: the assigned locals may now point into state.
-    if (State.touches(context, node.right)) {
+    if (touchesState(context, node.right)) {
       for (const name of Ast.bindingNames(target)) {
-        State.markMaybeState(context, name, null);
+        context.markMaybeState(name, null);
       }
     }
     return;
   }
 
-  const path = State.pathOf(context, target, { depth, forWrite: true });
+  const path = pathOf(context, target, { depth, forWrite: true });
   if (!path) {
     return;
   }
-  const isPlainAssignment = node.operator === "=";
-  const operator = node.operator.slice(0, -1);
-  const write: InlineWrite = isPlainAssignment
-    ? { kind: "set", value: node.right }
-    : { kind: "compound", operator, value: node.right };
-  if (emitInline(context, parent, path, write)) {
-    return;
+  const write: Codegen.InlineWrite & Codegen.HelperWrite =
+    node.operator === "="
+      ? { kind: "set", value: node.right }
+      : {
+          kind: "compound",
+          operator: node.operator.slice(0, -1),
+          value: node.right,
+        };
+  if (!emitInline(context, parent, path, write)) {
+    emitHelper(context, node, parent, path, write);
   }
-
-  const keys = Codegen.joinKeys(path.keys);
-  const helperCall = isPlainAssignment
-    ? [`Path.write(${CONTEXT}, [`, ...keys, "], ", node.right]
-    : [
-        `Path.write(${CONTEXT}, ${CONTEXT}.compoundPath = [`,
-        ...keys,
-        `], ${RUNTIME}.Path.read(${path.root}, ${CONTEXT}.compoundPath) `,
-        `${operator} (`,
-        node.right,
-        ")",
-      ];
-  emitHelper(context, node, parent, path, helperCall);
 }
 
 /**
  * Compiles `++` / `--` on state.
  */
 export function update(
-  context: Block.Context,
+  context: Context,
   node: Ast.Node,
   parent: Ast.Node,
   depth: number,
@@ -129,7 +115,10 @@ export function update(
   if (Ast.unwrap(node.argument).type !== "MemberExpression") {
     return;
   }
-  const path = State.pathOf(context, node.argument, { depth, forWrite: true });
+  const path = pathOf(context, node.argument, {
+    depth,
+    forWrite: true,
+  });
   if (
     !path ||
     emitInline(context, parent, path, {
@@ -139,27 +128,18 @@ export function update(
   ) {
     return;
   }
-  const delta = node.operator === "++" ? 1 : -1;
-  const helperCall = [
-    `Path.increment(${CONTEXT}, [`,
-    ...Codegen.joinKeys(path.keys),
-    `], ${delta}`,
-  ];
-  emitHelper(
-    context,
-    node,
-    parent,
-    path,
-    helperCall,
-    node.prefix ? "result" : "previousValue",
-  );
+  emitHelper(context, node, parent, path, {
+    kind: "increment",
+    delta: node.operator === "++" ? 1 : -1,
+    prefix: node.prefix,
+  });
 }
 
 /**
- * `delete path.key` (named `remove` since `delete` is reserved).
+ * `delete path.key`.
  */
 export function remove(
-  context: Block.Context,
+  context: Context,
   node: Ast.Node,
   parent: Ast.Node,
   depth: number,
@@ -170,7 +150,7 @@ export function remove(
   ) {
     return;
   }
-  const path = State.pathOf(context, node.argument, {
+  const path = pathOf(context, node.argument, {
     depth,
     forWrite: true,
     verb: "deletes",
@@ -178,11 +158,7 @@ export function remove(
   if (!path || emitInline(context, parent, path, { kind: "delete" })) {
     return;
   }
-  emitHelper(context, node, parent, path, [
-    `Path.remove(${CONTEXT}, [`,
-    ...Codegen.joinKeys(path.keys),
-    "]",
-  ]);
+  emitHelper(context, node, parent, path, { kind: "remove" });
 }
 
 /**
@@ -190,7 +166,7 @@ export function remove(
  * which may mutate too.
  */
 export function mutatingCall(
-  context: Block.Context,
+  context: Context,
   call: Ast.Node,
   method: string | null,
   depth: number,
@@ -198,7 +174,7 @@ export function mutatingCall(
 ): void {
   const callee = Ast.unwrap(call.callee);
   if (callee.optional || call.optional) {
-    if (State.touches(context, callee.object)) {
+    if (touchesState(context, callee.object)) {
       throw new MutError(
         "optional mutating calls on state aren't supported yet",
         call.start,
@@ -206,7 +182,7 @@ export function mutatingCall(
     }
     return;
   }
-  const path = State.pathOf(context, callee.object, {
+  const path = pathOf(context, callee.object, {
     depth,
     forWrite: true,
     verb: "mutating calls",
@@ -214,20 +190,14 @@ export function mutatingCall(
   if (!path) {
     return;
   }
-  const methodName = callee.computed ? callee.property : JSON.stringify(method);
-  const helperCall = [
-    `Path.callMethod(${CONTEXT}, [`,
-    ...Codegen.joinKeys(path.keys),
-    "], ",
-    methodName,
-    ", [",
-    ...Codegen.joinArguments(call.arguments),
-    "]",
-  ];
-  emitHelper(context, call, parent, path, helperCall);
+  emitHelper(context, call, parent, path, {
+    kind: "callMethod",
+    method: callee.computed ? callee.property : JSON.stringify(method),
+    args: call.arguments,
+  });
 }
 
-function isReadOnlyCall(context: Block.Context, callee: Ast.Node): boolean {
+function isReadOnlyCall(context: Context, callee: Ast.Node): boolean {
   const name = Ast.dottedName(callee);
   if (!name) {
     return false;
@@ -236,23 +206,23 @@ function isReadOnlyCall(context: Block.Context, callee: Ast.Node): boolean {
     return true;
   }
   return (
-    State.resolve(context, name.split(".")[0]).kind === "global" &&
-    Calls.isReadOnlyGlobal(name)
+    bindingOf(context, name.split(".")[0]).kind === "global" &&
+    Ast.isReadOnlyGlobal(name)
   );
 }
 
 function mayChangeReceiver(call: Ast.Node, method: string | null): boolean {
-  if (!method || !Calls.isReadOnly(method)) {
+  if (!method || !Ast.isReadOnlyMethod(method)) {
     return true;
   }
 
   // An iteration method with a function reference (not an inline callback) may
   // change the elements.
-  return Calls.isIteration(method) && !Ast.isFunction(call.arguments[0]);
+  return Ast.isIterationMethod(method) && !Ast.isFunction(call.arguments[0]);
 }
 
 function lendState(
-  context: Block.Context,
+  context: Context,
   call: Ast.Node,
   argument: Ast.Node,
   depth: number,
@@ -263,24 +233,25 @@ function lendState(
   const expression = Ast.unwrap(value);
   const binding =
     expression.type === "Identifier"
-      ? State.resolve(context, expression.name)
+      ? bindingOf(context, expression.name)
       : null;
   if (binding?.kind === "maybeState") {
     if (binding.promotable) {
       throw new PromoteToAlias(binding.promotable);
     }
-    const message =
-      `mut: \`${expression.name}\` may point into state; ` +
-      `changes \`${callee}\` makes through it aren't tracked`;
-    context.output.warnings.push({ message, pos: expression.start });
+    context.warn(
+      `\`${expression.name}\` may point into state; ` +
+        `changes \`${callee}\` makes through it aren't tracked`,
+      expression.start,
+    );
     return;
   }
 
-  const path = State.pathOf(context, value, { depth, forWrite: false });
+  const path = pathOf(context, value, { depth, forWrite: false });
   if (!path || depth > 0) {
     return;
   }
-  const root = State.resolve(context, path.root);
+  const root = bindingOf(context, path.root);
   if (root.kind === "root" && !Ast.isReassignable(root.declaredAs)) {
     return; // not state this block can rebind
   }
@@ -293,20 +264,15 @@ function lendState(
     );
   }
   if (opaqueCalls === "warn") {
-    const message =
-      `mut: \`${callee}\` may change state, so it gets a deep copy ` +
-      "(reconciled at the end of the block)";
-    context.output.warnings.push({ message, pos: call.start });
+    context.warn(
+      `\`${callee}\` may change state, so it gets a deep copy ` +
+        "(reconciled at the end of the block)",
+      call.start,
+    );
   }
   context.markReplaced(path.replaces);
-  context.output.lentRoots.add(path.root);
-  context.output.writtenRoots.add(path.root);
-  context.output.usesContext = true;
-  context.emit(value, [
-    `(${path.root} = ${RUNTIME}.Lending.lend(${CONTEXT}, [`,
-    ...Codegen.joinKeys(path.keys),
-    `], ${path.root}), ${CONTEXT}.result)`,
-  ]);
+  context.recordLend(path.root);
+  context.emit(value, Codegen.lendCall(path.root, path.keys));
 }
 
 /**
@@ -314,7 +280,7 @@ function lendState(
  * call the compiler can't see into.
  */
 export function opaqueCall(
-  context: Block.Context,
+  context: Context,
   call: Ast.Node,
   depth: number,
 ): void {

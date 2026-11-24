@@ -1,4 +1,4 @@
-export interface Input {
+export interface Options {
   /**
    * Module the generated code imports helpers from (default
    * "immutaby/runtime").
@@ -35,7 +35,7 @@ export interface Input {
 /**
  * Options with their defaults filled in.
  */
-export interface Resolved {
+export interface ResolvedOptions {
   runtime: string;
   opaqueCalls: "warn" | "error" | "allow";
   readonlyCalls: readonly string[];
@@ -46,10 +46,10 @@ export interface Resolved {
 /**
  * Fills in defaults. `nodeEnv` decides whether `freeze: "dev"` freezes.
  */
-export function resolve(
-  input: Input = {},
+export function resolveOptions(
+  input: Options = {},
   nodeEnv = process.env.NODE_ENV,
-): Resolved {
+): ResolvedOptions {
   const freeze = input.freeze ?? "dev";
   return {
     runtime: input.runtime ?? "immutaby/runtime",
