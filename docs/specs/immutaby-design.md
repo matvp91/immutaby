@@ -107,7 +107,17 @@ selectors and memoization rely on.
    keys, known copy state) are emitted as inline spreads/copies. The general
    path remains for dynamic cases.
 
-Both layers must pass the same test suite (§8).
+Both layers must pass the same test suite (§8); the Vitest config runs it twice
+(`inline` and `helpers` projects).
+
+The inline layer handles statement-level writes (`=`, compound, `++`/`--`,
+`delete`) to direct paths (a root variable plus member keys). Each node on the
+path is copied into a block-local variable guarded by an identity check
+(`if (s.user !== t1) s.user = t1 = copy(s.user)`), so a node is copied once
+and stays correct through branches, loops and rebinding of the root without
+static analysis. Writes in expressions, through aliases or `find`, and method
+calls use the helpers. Blocks that lend state to opaque calls use helpers
+throughout, because reconciling only knows the helpers' copies.
 
 ## 5. Semantics of `mut:`
 

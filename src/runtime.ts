@@ -286,3 +286,11 @@ export function reconcile(context: Context, node: Node, base: Node): Node {
   }
   return shallowEqual(node, base) ? base : node;
 }
+
+/** Shallow copy for inline writes (see `copy` in the generated code). */
+export { shallowCopy as copy };
+
+/** Whether `parent[key] = value` would change nothing (as in `set`). */
+export function same(parent: Node, key: Key, value: unknown): boolean {
+  return Object.is(parent[key], value) && (value !== undefined || key in parent);
+}
