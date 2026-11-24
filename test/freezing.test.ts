@@ -52,5 +52,5 @@ it("leaves class instances that aren't draftable alone", () => {
 it("can be turned off", () => {
   const source = `let s = {}; mut: { s.a = 1; }`;
   expect(transform(source, "a.ts", { freeze: "never" })?.code).not.toContain("freeze");
-  expect(transform(source, "a.ts", { freeze: "always" })?.code).toContain("__imm.deepFreeze(s)");
+  expect(transform(source, "a.ts", { freeze: "always" })?.code).toContain("__imm.Draft.freeze(s)");
 });

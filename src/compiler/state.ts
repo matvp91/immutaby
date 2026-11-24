@@ -167,7 +167,7 @@ export function pathOf(context: Block.Context, expression: Ast.Node, query: Path
         return null;
       }
       const findKey = [
-        `${RUNTIME}.findIndexKey(${JSON.stringify(findIndexMethod)}, `,
+        `${RUNTIME}.Path.findIndexKey(${JSON.stringify(findIndexMethod)}, `,
         ...joinArguments(node.arguments),
         ")",
       ];

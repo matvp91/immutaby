@@ -62,7 +62,7 @@ export function declarator(context: Block.Context, node: Ast.Node, depth: number
   // Hold the path, with its computed keys captured now (and `find` resolved once).
   context.markReplaced(path.replaces);
   const keys = ["[", ...Codegen.joinKeys(path.keys), "]"];
-  context.emit(node.init, path.hasFindKey ? [`${RUNTIME}.resolvePath(`, ...keys, `, ${path.root})`] : keys);
+  context.emit(node.init, path.hasFindKey ? [`${RUNTIME}.Path.resolve(`, ...keys, `, ${path.root})`] : keys);
 }
 
 /** `for (const item of s.todos)`: written through, it becomes an index loop with `item` read as `s.todos[item]`. */
@@ -91,7 +91,7 @@ export function forOf(context: Block.Context, loop: Ast.Node, depth: number): vo
     const list = Codegen.aliasRead({ root: path.root, keys });
     State.declareAlias(context, binding, { root: path.root, keys: [...keys, item] }, path.replaces);
     context.emitRange(loop.start, loop.body.start, [
-      `for (let ${item} = (${RUNTIME}.assertArray(${list}), 0); ${item} < ${list}.length; ${item}++) `,
+      `for (let ${item} = (${RUNTIME}.Path.assertArray(${list}), 0); ${item} < ${list}.length; ${item}++) `,
     ]);
     return;
   }
@@ -102,7 +102,7 @@ export function forOf(context: Block.Context, loop: Ast.Node, depth: number): vo
     { root: alias.root, keys: [...alias.keys, `${item}[${path.keys.length}]`] },
     path.replaces,
   );
-  context.emit(loop.right, [`${RUNTIME}.elementPaths(() => ${path.root}, [`, ...Codegen.joinKeys(path.keys), "])"]);
+  context.emit(loop.right, [`${RUNTIME}.Path.elements(() => ${path.root}, [`, ...Codegen.joinKeys(path.keys), "])"]);
 }
 
 /**
@@ -134,7 +134,7 @@ function elementAlias(
   const methodName = JSON.stringify(method);
   const keys = Codegen.joinKeys(receiver.keys);
   context.emit(call, [
-    `${RUNTIME}.iterateWithPaths([`,
+    `${RUNTIME}.Path.iterate([`,
     ...keys,
     `], ${methodName}, [`,
     ...Codegen.joinArguments(call.arguments),

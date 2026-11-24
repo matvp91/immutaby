@@ -6,7 +6,7 @@ import type * as Options from "./options.ts";
 export { MutError, type Warning } from "./compiler/errors.ts";
 export { type TransformResult, transform } from "./compiler/transform.ts";
 export type { Input as Options } from "./options.ts";
-export { immerable } from "./runtime/index.ts";
+export { immerable } from "./runtime/draft.ts";
 
 const SCRIPT_MODULE = /\.[cm]?[jt]sx?(?:$|\?)/;
 

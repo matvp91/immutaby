@@ -77,11 +77,11 @@ export function assignment(context: Block.Context, node: Ast.Node, parent: Ast.N
 
   const keys = Codegen.joinKeys(path.keys);
   const helperCall = isPlainAssignment
-    ? [`writePath(${CONTEXT}, [`, ...keys, "], ", node.right]
+    ? [`Path.write(${CONTEXT}, [`, ...keys, "], ", node.right]
     : [
-        `writePath(${CONTEXT}, ${CONTEXT}.compoundPath = [`,
+        `Path.write(${CONTEXT}, ${CONTEXT}.compoundPath = [`,
         ...keys,
-        `], ${RUNTIME}.readPath(${path.root}, ${CONTEXT}.compoundPath) ${operator} (`,
+        `], ${RUNTIME}.Path.read(${path.root}, ${CONTEXT}.compoundPath) ${operator} (`,
         node.right,
         ")",
       ];
@@ -97,7 +97,7 @@ export function update(context: Block.Context, node: Ast.Node, parent: Ast.Node,
     return;
   }
   const delta = node.operator === "++" ? 1 : -1;
-  const helperCall = [`incrementPath(${CONTEXT}, [`, ...Codegen.joinKeys(path.keys), `], ${delta}`];
+  const helperCall = [`Path.increment(${CONTEXT}, [`, ...Codegen.joinKeys(path.keys), `], ${delta}`];
   emitHelper(context, node, parent, path, helperCall, node.prefix ? "result" : "previousValue");
 }
 
@@ -110,7 +110,7 @@ export function remove(context: Block.Context, node: Ast.Node, parent: Ast.Node,
   if (!path || emitInline(context, parent, path, { kind: "delete" })) {
     return;
   }
-  emitHelper(context, node, parent, path, [`deletePath(${CONTEXT}, [`, ...Codegen.joinKeys(path.keys), "]"]);
+  emitHelper(context, node, parent, path, [`Path.remove(${CONTEXT}, [`, ...Codegen.joinKeys(path.keys), "]"]);
 }
 
 /** `path.push(x)`, `path.set(k, v)`, …, or a computed method (`path[m](x)`), which may mutate too. */
@@ -134,7 +134,7 @@ export function mutatingCall(
   }
   const methodName = callee.computed ? callee.property : JSON.stringify(method);
   const helperCall = [
-    `callMethodAtPath(${CONTEXT}, [`,
+    `Path.callMethod(${CONTEXT}, [`,
     ...Codegen.joinKeys(path.keys),
     "], ",
     methodName,
@@ -205,7 +205,7 @@ function lendState(context: Block.Context, call: Ast.Node, argument: Ast.Node, d
   context.output.writtenRoots.add(path.root);
   context.output.usesContext = true;
   context.emit(value, [
-    `(${path.root} = ${RUNTIME}.lendDeepCopy(${CONTEXT}, [`,
+    `(${path.root} = ${RUNTIME}.Lending.lend(${CONTEXT}, [`,
     ...Codegen.joinKeys(path.keys),
     `], ${path.root}), ${CONTEXT}.result)`,
   ]);

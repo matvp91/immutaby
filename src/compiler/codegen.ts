@@ -130,13 +130,15 @@ export function inlineWrite(
   const copies = nodes
     .map((node, i) => {
       const copy = variables.copyOf(names[i]);
-      return `if (${node} !== ${copy}) ${node} = ${copy} = ${RUNTIME}.shallowCopy(${node}); `;
+      return `if (${node} !== ${copy}) ${node} = ${copy} = ${RUNTIME}.Draft.shallowCopy(${node}); `;
     })
     .join("");
   if (write.kind === "delete") {
     code.push(`if (${lastKey} in ${parent}) { ${copies}delete ${target}; } }`);
   } else {
-    code.push(`if (!${RUNTIME}.isUnchanged(${parent}, ${lastKey}, ${value})) { ${copies}${target} = ${value}; } }`);
+    code.push(
+      `if (!${RUNTIME}.Path.isUnchanged(${parent}, ${lastKey}, ${value})) { ${copies}${target} = ${value}; } }`,
+    );
   }
   return code;
 }
@@ -157,7 +159,7 @@ export function blockWrapper({ usesContext, copyVariables, lentRoots, frozenRoot
 } {
   const open: string[] = [];
   if (usesContext) {
-    open.push(`const ${CONTEXT} = ${RUNTIME}.createContext();`);
+    open.push(`const ${CONTEXT} = ${RUNTIME}.Draft.createContext();`);
   }
   if (copyVariables.length) {
     open.push(`let ${copyVariables.join(", ")};`);
@@ -172,8 +174,8 @@ export function blockWrapper({ usesContext, copyVariables, lentRoots, frozenRoot
   }
   open.push("try {");
   const atEnd = [
-    ...lentRoots.map((root) => `${root} = ${RUNTIME}.restoreSharing(${CONTEXT}, ${root}, ${base(root)});`),
-    ...frozenRoots.map((root) => `${RUNTIME}.deepFreeze(${root});`),
+    ...lentRoots.map((root) => `${root} = ${RUNTIME}.Lending.restoreSharing(${CONTEXT}, ${root}, ${base(root)});`),
+    ...frozenRoots.map((root) => `${RUNTIME}.Draft.freeze(${root});`),
   ];
   return { open: open.join(" "), close: ` } finally { ${atEnd.join(" ")} }` };
 }
