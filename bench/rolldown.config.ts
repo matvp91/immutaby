@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "rolldown";
-import immutaby from "../src/index.ts";
+import { rolldown as immutaby } from "../src/index.ts";
 
 // Production settings: no freezing (immer's auto-freeze is disabled in the
 // benchmark too).

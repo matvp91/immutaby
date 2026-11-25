@@ -1,4 +1,4 @@
-import immutaby from "immutaby";
+import { rolldown as immutaby } from "immutaby";
 import { defineConfig } from "rolldown";
 
 export default defineConfig({

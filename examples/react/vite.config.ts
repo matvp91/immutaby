@@ -1,4 +1,4 @@
-import immutaby from "immutaby";
+import { vite as immutaby } from "immutaby";
 import { defineConfig } from "vite";
 
 export default defineConfig({

@@ -1,6 +1,6 @@
 # immutaby
 
-Write immutable updates as plain mutations. A Rolldown plugin compiles them at build time into copy-on-write code with structural sharing: no Proxies, no wrapper objects, and only a small runtime helper.
+Write immutable updates as plain mutations. A bundler plugin compiles them at build time into copy-on-write code with structural sharing: no Proxies, no wrapper objects, and only a small runtime helper.
 
 ```ts
 let s = state;
@@ -18,18 +18,30 @@ mut: {
 pnpm add -D immutaby
 ```
 
-Requires Rolldown 1.3 or later, or a Rolldown-based Vite (8+).
+There is a plugin for each bundler [unplugin](https://github.com/unjs/unplugin) supports: `rolldown`, `vite`, `rollup`, `esbuild`, `webpack`, `rspack`, `rsbuild`, `farm`, `bun` and `unloader`.
 
 ```ts
-// rolldown.config.ts (or the `plugins` of vite.config.ts)
+// rolldown.config.ts
 import { defineConfig } from "rolldown";
-import immutaby from "immutaby";
+import { rolldown as immutaby } from "immutaby";
 
 export default defineConfig({
   input: "src/index.ts",
   plugins: [immutaby()],
 });
 ```
+
+```ts
+// vite.config.ts
+import { defineConfig } from "vite";
+import { vite as immutaby } from "immutaby";
+
+export default defineConfig({
+  plugins: [immutaby()],
+});
+```
+
+To compile without a bundler, call `transform(code, id, options)` from `immutaby` directly.
 
 ## Usage
 

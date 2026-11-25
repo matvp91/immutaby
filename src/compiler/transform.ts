@@ -1,6 +1,6 @@
 import type { SourceMap } from "magic-string";
 import MagicString from "magic-string";
-import { parseAst } from "rolldown/parseAst";
+import { parseSync } from "oxc-parser";
 import type { Options } from "../options.ts";
 import { resolveOptions } from "../options.ts";
 import * as Ast from "./ast.ts";
@@ -34,11 +34,14 @@ export function transform(
     return null;
   }
   const options = resolveOptions(input);
-  const ast = parseAst(
-    code,
-    { lang: languageOf(id), preserveParens: true },
-    id,
-  );
+  const { program: ast, errors } = parseSync(id, code, {
+    lang: languageOf(id),
+    preserveParens: true,
+  });
+  if (errors.length > 0) {
+    const [first] = errors;
+    throw new SyntaxError(first.codeframe ?? first.message);
+  }
   const magic = new MagicString(code);
   const warnings: Warning[] = [];
 
